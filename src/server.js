@@ -11,23 +11,10 @@ const envPath = existsSync(path.join(root, '.env'))
 dotenv.config({ path: envPath });
 
 const PORT = Number(process.env.PORT || 8787);
-const SUBCONVERTER_URL = (process.env.SUBCONVERTER_URL || 'http://127.0.0.1:25500').replace(
-  /\/$/,
-  '',
-);
-const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 const MERGE_CONFIG_PATH = path.resolve(
   process.env.MERGE_CONFIG_PATH || path.join(process.cwd(), 'merge-config.json'),
 );
-
-const SUBCONVERTER_CUSTOM_KEYS = new Set([
-  'generateRules',
-  'overwriteRules',
-  'prefixByTag',
-  'extraRename',
-  'emojis',
-  'rawAppend',
-]);
+const MAX_SOURCE_BYTES = Number(process.env.MAX_SOURCE_BYTES || 20_000_000);
 
 function readTokenFromQuery(req) {
   const raw = req.query.token;
@@ -35,205 +22,107 @@ function readTokenFromQuery(req) {
   return typeof token === 'string' ? token : '';
 }
 
-function assertNoLegacyExternalConfig(profile, index) {
-  if (profile.externalConfig != null && String(profile.externalConfig).trim() !== '') {
-    throw new Error(
-      `merge-config: profiles[${index}] 使用了已废弃的 "externalConfig" 外链，请改为使用 "subconverterCustom"（或高级选项 "externalConfigIni"），并设置 PUBLIC_BASE_URL`,
-    );
+function readPlainFromQuery(req) {
+  const raw = req.query.plain;
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === '1' || v === 'true';
+}
+
+function noStoreCacheHeaders(reply) {
+  reply.header('cache-control', 'no-store, no-cache, must-revalidate');
+  reply.header('pragma', 'no-cache');
+}
+
+function splitLines(s) {
+  return s.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+}
+
+/** 排除 http(s)://，避免把网页/规则链接误当成节点行 */
+function looksLikeShareUri(line) {
+  if (/^https?:\/\//i.test(line)) {
+    return false;
+  }
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(line);
+}
+
+function looksLikeBase64Block(s) {
+  const t = s.replace(/\s+/g, '');
+  return t.length >= 16 && /^[A-Za-z0-9+/=_-]+$/.test(t);
+}
+
+function decodeBase64Flexible(b64) {
+  const t = b64.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = (4 - (t.length % 4)) % 4;
+  const padded = t + '='.repeat(pad);
+  try {
+    return Buffer.from(padded, 'base64').toString('utf8');
+  } catch {
+    return null;
   }
 }
 
-function validateSubconverterCustomKeys(custom, profileIndex) {
-  for (const k of Object.keys(custom)) {
-    if (!SUBCONVERTER_CUSTOM_KEYS.has(k)) {
-      throw new Error(
-        `merge-config: profiles[${profileIndex}].subconverterCustom 含有未知字段 "${k}"，允许: ${[...SUBCONVERTER_CUSTOM_KEYS].join(', ')}`,
-      );
+/**
+ * 从订阅正文提取分享链接（支持：整段 base64、多行 base64、直接多行 vmess/vless/…）
+ */
+function extractShareLinksFromSubscriptionText(raw) {
+  const out = [];
+  const seen = new Set();
+  const push = (s) => {
+    if (seen.has(s)) {
+      return;
+    }
+    seen.add(s);
+    out.push(s);
+  };
+  const addFromDecoded = (decoded) => {
+    for (const line of splitLines(decoded)) {
+      if (looksLikeShareUri(line)) {
+        push(line);
+      }
+    }
+  };
+
+  const compact = raw.replace(/\s+/g, '');
+  if (compact.length >= 20 && looksLikeBase64Block(compact)) {
+    const decoded = decodeBase64Flexible(compact);
+    if (decoded && decoded.includes('://')) {
+      addFromDecoded(decoded);
+      if (out.length > 0) {
+        return out;
+      }
     }
   }
+
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return out;
+  }
+
+  for (const line of splitLines(trimmed)) {
+    if (looksLikeShareUri(line)) {
+      push(line);
+      continue;
+    }
+    const one = line.replace(/\s+/g, '');
+    if (one.length >= 20 && looksLikeBase64Block(one)) {
+      const decoded = decodeBase64Flexible(one);
+      if (decoded && decoded.includes('://')) {
+        addFromDecoded(decoded);
+      }
+    }
+  }
+  return out;
 }
 
-function buildIniFromSubconverterCustom(custom, profileIndex) {
-  validateSubconverterCustomKeys(custom, profileIndex);
-  const lines = ['[custom]'];
-  lines.push(`enable_rule_generator=${custom.generateRules === true ? 'true' : 'false'}`);
-  lines.push(`overwrite_original_rules=${custom.overwriteRules === true ? 'true' : 'false'}`);
-
-  const prefixByTag = custom.prefixByTag;
-  if (prefixByTag != null) {
-    if (typeof prefixByTag !== 'object' || Array.isArray(prefixByTag)) {
-      throw new Error(
-        `merge-config: profiles[${profileIndex}].subconverterCustom.prefixByTag 必须为对象`,
-      );
-    }
-    const keys = Object.keys(prefixByTag).sort();
-    for (const tag of keys) {
-      const prefix = prefixByTag[tag];
-      if (typeof tag !== 'string' || !/^[-\w.]+$/.test(tag)) {
-        throw new Error(
-          `merge-config: prefixByTag 的键 "${tag}" 须与 sources[].tag 相同格式（字母数字 - _ .）`,
-        );
-      }
-      if (typeof prefix !== 'string' || /[\r\n]/.test(prefix)) {
-        throw new Error(`merge-config: prefixByTag."${tag}" 必须为不含换行的字符串`);
-      }
-      lines.push(`rename=!!GROUP=${tag}!!^@${prefix}`);
-    }
+function parseSourceFetchUserAgent(data) {
+  const raw = data?.sourceFetchUserAgent;
+  if (raw == null) {
+    return '';
   }
-
-  if (custom.extraRename != null) {
-    if (!Array.isArray(custom.extraRename)) {
-      throw new Error(
-        `merge-config: profiles[${profileIndex}].subconverterCustom.extraRename 必须为数组`,
-      );
-    }
-    for (let j = 0; j < custom.extraRename.length; j++) {
-      const item = custom.extraRename[j];
-      if (typeof item === 'string') {
-        if (!item.includes('@')) {
-          throw new Error(
-            `merge-config: extraRename[${j}] 字符串须为 subconverter 的「匹配@替换」整段（至少含一个 @）`,
-          );
-        }
-        if (/[\r\n]/.test(item)) {
-          throw new Error(`merge-config: extraRename[${j}] 不得含换行`);
-        }
-        lines.push(`rename=${item}`);
-      } else if (
-        item &&
-        typeof item === 'object' &&
-        typeof item.pattern === 'string' &&
-        typeof item.replacement === 'string'
-      ) {
-        if (/[\r\n]/.test(item.pattern) || /[\r\n]/.test(item.replacement)) {
-          throw new Error(`merge-config: extraRename[${j}] 的 pattern / replacement 不得含换行`);
-        }
-        lines.push(`rename=${item.pattern}@${item.replacement}`);
-      } else {
-        throw new Error(
-          `merge-config: extraRename[${j}] 须为字符串，或 { "pattern": "…", "replacement": "…" }`,
-        );
-      }
-    }
+  if (typeof raw !== 'string') {
+    throw new Error('merge-config: "sourceFetchUserAgent" 必须为字符串（可省略，默认空）');
   }
-
-  if (custom.emojis != null) {
-    if (!Array.isArray(custom.emojis)) {
-      throw new Error(
-        `merge-config: profiles[${profileIndex}].subconverterCustom.emojis 必须为数组`,
-      );
-    }
-    for (let j = 0; j < custom.emojis.length; j++) {
-      const row = custom.emojis[j];
-      if (
-        !row ||
-        typeof row !== 'object' ||
-        typeof row.match !== 'string' ||
-        typeof row.emoji !== 'string'
-      ) {
-        throw new Error(
-          `merge-config: emojis[${j}] 须为 { "match": "关键词或正则片段", "emoji": "🇭🇰" }`,
-        );
-      }
-      if (/[\r\n]/.test(row.match) || /[\r\n]/.test(row.emoji)) {
-        throw new Error(`merge-config: emojis[${j}] 不得含换行`);
-      }
-      lines.push(`emoji=(${row.match}),${row.emoji}`);
-    }
-  }
-
-  if (custom.rawAppend != null) {
-    if (typeof custom.rawAppend !== 'string') {
-      throw new Error(
-        `merge-config: profiles[${profileIndex}].subconverterCustom.rawAppend 必须为字符串`,
-      );
-    }
-    const rest = custom.rawAppend.trim();
-    if (rest) {
-      lines.push(rest);
-    }
-  }
-
-  return `${lines.join('\n')}\n`;
-}
-
-function getResolvedExternalConfigBody(profile, profileIndex) {
-  const rawIni =
-    typeof profile.externalConfigIni === 'string' ? profile.externalConfigIni.trim() : '';
-  const custom = profile.subconverterCustom;
-  const hasCustomObject =
-    custom != null &&
-    typeof custom === 'object' &&
-    !Array.isArray(custom) &&
-    Object.keys(custom).length > 0;
-
-  if (rawIni && hasCustomObject) {
-    throw new Error(
-      `merge-config: profiles[${profileIndex}] 不能同时使用 externalConfigIni 与 subconverterCustom，请只保留其一`,
-    );
-  }
-  if (rawIni) {
-    return rawIni;
-  }
-  if (hasCustomObject) {
-    return buildIniFromSubconverterCustom(custom, profileIndex);
-  }
-  return '';
-}
-
-function buildUrlQueryParam(sources) {
-  if (!Array.isArray(sources) || sources.length === 0) {
-    throw new Error('profile "sources" must be a non-empty array');
-  }
-  const parts = [];
-  for (const s of sources) {
-    if (!s || typeof s.url !== 'string' || s.url.length === 0) {
-      throw new Error('each source needs a non-empty string "url"');
-    }
-    const tag = typeof s.tag === 'string' ? s.tag.trim() : '';
-    if (tag.length > 0) {
-      if (!/^[-\w.]+$/.test(tag)) {
-        throw new Error(
-          `source tag "${tag}" should use only letters, digits, hyphen, underscore, dot`,
-        );
-      }
-      parts.push(`tag:${tag},${encodeURIComponent(s.url)}`);
-    } else {
-      parts.push(encodeURIComponent(s.url));
-    }
-  }
-  return parts.join('|');
-}
-
-function buildGatewayConfigUrl(token) {
-  if (!PUBLIC_BASE_URL) {
-    throw new Error(
-      '已配置 subconverter 外部规则时必须在环境变量中设置 PUBLIC_BASE_URL（subconverter 能访问到的网关基址，无末尾斜杠）',
-    );
-  }
-  return `${PUBLIC_BASE_URL}/config?token=${encodeURIComponent(token)}`;
-}
-
-function buildSubconverterSearch(profile, token) {
-  const target = typeof profile.target === 'string' ? profile.target : 'mixed';
-  const urlParam = buildUrlQueryParam(profile.sources);
-  const params = [
-    `target=${encodeURIComponent(target)}`,
-    `url=${encodeURIComponent(urlParam)}`,
-  ];
-  const iniBody = profile._resolvedExternalBody ?? '';
-  if (iniBody.length > 0) {
-    params.push(`config=${encodeURIComponent(buildGatewayConfigUrl(token))}`);
-  }
-  if (profile.extraQuery && typeof profile.extraQuery === 'object') {
-    for (const [k, v] of Object.entries(profile.extraQuery)) {
-      if (k === 'target' || k === 'url' || k === 'config') {
-        continue;
-      }
-      params.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
-    }
-  }
-  return params.join('&');
+  return raw.trim();
 }
 
 function parseProfiles(data) {
@@ -242,31 +131,31 @@ function parseProfiles(data) {
   }
   const byToken = new Map();
   for (let i = 0; i < data.profiles.length; i++) {
-    const p = { ...data.profiles[i] };
-    if (!p || typeof p.token !== 'string' || p.token.length === 0) {
+    const src = data.profiles[i];
+    if (!src || typeof src.token !== 'string' || src.token.length === 0) {
       throw new Error(`merge-config: profiles[${i}] needs a non-empty string "token"`);
     }
-    assertNoLegacyExternalConfig(p, i);
-    const token = p.token.trim();
+    const token = src.token.trim();
     if (byToken.has(token)) {
       throw new Error('merge-config: duplicate "token" in profiles');
     }
-    if (!Array.isArray(p.sources) || p.sources.length === 0) {
+    if (!Array.isArray(src.sources) || src.sources.length === 0) {
       throw new Error(`merge-config: profiles[${i}] needs non-empty "sources"`);
     }
-    const resolvedBody = getResolvedExternalConfigBody(p, i);
-    if (resolvedBody && !PUBLIC_BASE_URL) {
-      throw new Error(
-        'merge-config: 某 profile 配置了 subconverterCustom 或 externalConfigIni，但未设置环境变量 PUBLIC_BASE_URL',
-      );
+    const sources = [];
+    for (let j = 0; j < src.sources.length; j++) {
+      const s = src.sources[j];
+      if (!s || typeof s.url !== 'string' || s.url.trim().length === 0) {
+        throw new Error(`merge-config: profiles[${i}].sources[${j}] needs non-empty "url"`);
+      }
+      sources.push({ url: s.url.trim() });
     }
-    p._resolvedExternalBody = resolvedBody;
-    byToken.set(token, p);
+    byToken.set(token, { token, sources });
   }
   return byToken;
 }
 
-let cachedConfig = { mtimeMs: 0, byToken: null };
+let cachedConfig = { mtimeMs: 0, byToken: null, sourceFetchUserAgent: '' };
 
 async function loadProfileByToken(token) {
   if (!existsSync(MERGE_CONFIG_PATH)) {
@@ -277,7 +166,8 @@ async function loadProfileByToken(token) {
     const raw = await readFile(MERGE_CONFIG_PATH, 'utf8');
     const data = JSON.parse(raw);
     const byToken = parseProfiles(data);
-    cachedConfig = { mtimeMs: st.mtimeMs, byToken };
+    const sourceFetchUserAgent = parseSourceFetchUserAgent(data);
+    cachedConfig = { mtimeMs: st.mtimeMs, byToken, sourceFetchUserAgent };
   }
   if (!token || typeof token !== 'string') {
     return null;
@@ -285,12 +175,52 @@ async function loadProfileByToken(token) {
   return cachedConfig.byToken.get(token.trim()) ?? null;
 }
 
+async function fetchHttpSourceBody(url, ua) {
+  const init = ua.length > 0 ? { headers: { 'User-Agent': ua } } : undefined;
+  const res = await fetch(url, init);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length > MAX_SOURCE_BYTES) {
+    throw new Error(`source response too large (>${MAX_SOURCE_BYTES} bytes)`);
+  }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return buf.toString('utf8');
+}
+
+/**
+ * 按 sources 顺序合并；同一链接去重（保留先出现的顺序）
+ */
+async function mergeShareLinksForProfile(profile, ua) {
+  const merged = [];
+  const seen = new Set();
+  for (let i = 0; i < profile.sources.length; i++) {
+    const url = profile.sources[i].url;
+    let text;
+    if (/^https?:\/\//i.test(url)) {
+      text = await fetchHttpSourceBody(url, ua);
+    } else {
+      text = url;
+    }
+    const links = extractShareLinksFromSubscriptionText(text);
+    for (const line of links) {
+      if (seen.has(line)) {
+        continue;
+      }
+      seen.add(line);
+      merged.push(line);
+    }
+  }
+  return merged;
+}
+
 const app = Fastify({ logger: true });
 
 app.get('/health', async () => ({ ok: true }));
 
-app.get('/config', async (req, reply) => {
+app.get('/sub', async (req, reply) => {
   const tokenStr = readTokenFromQuery(req);
+  const wantPlain = readPlainFromQuery(req);
   let profile;
   try {
     profile = await loadProfileByToken(tokenStr);
@@ -301,58 +231,37 @@ app.get('/config', async (req, reply) => {
   if (!profile) {
     return reply.code(401).send({ error: 'unauthorized' });
   }
-  const body = profile._resolvedExternalBody ?? '';
-  if (!body) {
-    return reply.code(404).send({ error: 'no_subconverter_external' });
+
+  const ua = (cachedConfig.sourceFetchUserAgent ?? '').trim();
+  let lines;
+  try {
+    lines = await mergeShareLinksForProfile(profile, ua);
+  } catch (e) {
+    req.log.error(e);
+    return reply
+      .code(502)
+      .header('content-type', 'application/json; charset=utf-8')
+      .send({ error: 'source_fetch_failed', message: e.message });
   }
+
+  if (lines.length === 0) {
+    return reply
+      .code(404)
+      .header('content-type', 'text/plain; charset=utf-8')
+      .header('cache-control', 'no-store')
+      .send('No nodes were found!\n');
+  }
+
+  const body = wantPlain
+    ? `${lines.join('\n')}\n`
+    : `${Buffer.from(lines.join('\n'), 'utf8').toString('base64')}\n`;
+
+  noStoreCacheHeaders(reply);
   return reply
     .header('content-type', 'text/plain; charset=utf-8')
-    .header('cache-control', 'no-store')
+    .code(200)
     .send(body);
 });
 
-app.get('/sub', async (req, reply) => {
-  const tokenStr = readTokenFromQuery(req);
-  let profile;
-  try {
-    profile = await loadProfileByToken(tokenStr);
-  } catch (e) {
-    req.log.error(e);
-    return reply.code(500).send({ error: 'config_error', message: e.message });
-  }
-  if (!profile) {
-    return reply.code(401).send({ error: 'unauthorized' });
-  }
-
-  let search;
-  try {
-    search = buildSubconverterSearch(profile, tokenStr.trim());
-  } catch (e) {
-    req.log.error(e);
-    return reply.code(500).send({ error: 'invalid_profile', message: e.message });
-  }
-
-  const scUrl = `${SUBCONVERTER_URL}/sub?${search}`;
-  let res;
-  try {
-    res = await fetch(scUrl, {
-      headers: { 'User-Agent': 'proxy-subscribe-merge/1.0' },
-    });
-  } catch (e) {
-    req.log.error(e);
-    return reply.code(502).send({ error: 'subconverter_unreachable', message: e.message });
-  }
-
-  const body = await res.text();
-  const ct = res.headers.get('content-type');
-  if (ct) {
-    reply.header('content-type', ct);
-  }
-  return reply.code(res.status).send(body);
-});
-
 await app.listen({ port: PORT, host: '0.0.0.0' });
-app.log.info(`listening on ${PORT}, subconverter ${SUBCONVERTER_URL}`);
-if (PUBLIC_BASE_URL) {
-  app.log.info(`PUBLIC_BASE_URL=${PUBLIC_BASE_URL} (subconverter 将从此基址拉取 /config)`);
-}
+app.log.info(`listening on ${PORT}, merge-config ${MERGE_CONFIG_PATH}`);

@@ -1,7 +1,5 @@
 # 复制为 docker-compose.yml，放好 merge-config.json 后在同目录执行：
 #   docker compose up -d --build
-#
-# 网关源码在 NAS 上 build；勿将 subconverter 的 25500 暴露到公网。
 
 services:
   gateway:
@@ -11,14 +9,6 @@ services:
       - "8787:8787"
     environment:
       PORT: "8787"
-      SUBCONVERTER_URL: "http://subconverter:25500"
       MERGE_CONFIG_PATH: "/config/merge-config.json"
-      PUBLIC_BASE_URL: "http://gateway:8787"
     volumes:
       - ./merge-config.json:/config/merge-config.json:ro
-    depends_on:
-      - subconverter
-
-  subconverter:
-    image: tindy2013/subconverter:latest
-    restart: unless-stopped
