@@ -192,17 +192,26 @@ async function fetchHttpSourceBody(url, ua) {
  * 按 sources 顺序合并；同一链接去重（保留先出现的顺序）
  */
 async function mergeShareLinksForProfile(profile, ua) {
+  const linksBySource = await Promise.all(
+    profile.sources.map(async (source, idx) => {
+      const url = source.url;
+      let text;
+      try {
+        if (/^https?:\/\//i.test(url)) {
+          text = await fetchHttpSourceBody(url, ua);
+        } else {
+          text = url;
+        }
+      } catch (e) {
+        throw new Error(`source[${idx}] fetch failed: ${e.message}`);
+      }
+      return extractShareLinksFromSubscriptionText(text);
+    }),
+  );
+
   const merged = [];
   const seen = new Set();
-  for (let i = 0; i < profile.sources.length; i++) {
-    const url = profile.sources[i].url;
-    let text;
-    if (/^https?:\/\//i.test(url)) {
-      text = await fetchHttpSourceBody(url, ua);
-    } else {
-      text = url;
-    }
-    const links = extractShareLinksFromSubscriptionText(text);
+  for (const links of linksBySource) {
     for (const line of links) {
       if (seen.has(line)) {
         continue;
