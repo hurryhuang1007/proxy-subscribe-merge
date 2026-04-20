@@ -1,0 +1,38 @@
+{
+  "profiles": [
+    {
+      "token": "请替换为长随机串-用户甲",
+      "target": "mixed",
+      "sources": [
+        { "url": "https://机场A订阅地址" },
+        { "url": "https://机场B订阅地址" }
+      ],
+      "extraQuery": {
+        "emoji": "false",
+        "append_type": "false"
+      }
+    },
+    {
+      "token": "请替换为长随机串-用户乙",
+      "target": "mixed",
+      "sources": [
+        { "tag": "a1", "url": "https://机场A订阅地址" },
+        { "url": "https://无tag则不改名" }
+      ],
+      "subconverterCustom": {
+        "generateRules": false,
+        "overwriteRules": false,
+        "prefixByTag": {
+          "a1": "[机场A] "
+        },
+        "emojis": [
+          { "match": "港|HK|Hong Kong", "emoji": "🇭🇰" },
+          { "match": "日本|东京|JP", "emoji": "🇯🇵" }
+        ]
+      },
+      "extraQuery": {
+        "emoji": "false"
+      }
+    }
+  ]
+}

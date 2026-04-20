@@ -1,0 +1,17 @@
+{
+  "name": "proxy-subscribe-merge",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "fastify": "^4.29.0"
+  }
+}
