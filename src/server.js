@@ -190,8 +190,9 @@ async function fetchHttpSourceBody(url, ua) {
 
 /**
  * 按 sources 顺序合并；同一链接去重（保留先出现的顺序）
+ * 单个源拉取失败时跳过该源，不影响其它源。
  */
-async function mergeShareLinksForProfile(profile, ua) {
+async function mergeShareLinksForProfile(profile, ua, log) {
   const linksBySource = await Promise.all(
     profile.sources.map(async (source, idx) => {
       const url = source.url;
@@ -203,7 +204,8 @@ async function mergeShareLinksForProfile(profile, ua) {
           text = url;
         }
       } catch (e) {
-        throw new Error(`source[${idx}] fetch failed: ${e.message}`);
+        log.warn({ err: e, idx }, `source[${idx}] fetch failed; skipped`);
+        return [];
       }
       return extractShareLinksFromSubscriptionText(text);
     }),
@@ -244,7 +246,7 @@ app.get('/sub', async (req, reply) => {
   const ua = (cachedConfig.sourceFetchUserAgent ?? '').trim();
   let lines;
   try {
-    lines = await mergeShareLinksForProfile(profile, ua);
+    lines = await mergeShareLinksForProfile(profile, ua, req.log);
   } catch (e) {
     req.log.error(e);
     return reply
