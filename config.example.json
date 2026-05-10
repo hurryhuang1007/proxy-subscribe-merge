@@ -1,0 +1,30 @@
+{
+  "adminPassword": "请替换为管理密码",
+  "subscriptionPool": {
+    "airportA": {
+      "url": "https://机场A通用订阅地址",
+      "disabled": false,
+      "userAgent": "subconverter"
+    },
+    "airportB": {
+      "url": "https://机场B通用订阅地址",
+      "disabled": false,
+      "userAgent": ""
+    },
+    "inlineNode": {
+      "url": "vless://uuid@host:443?encryption=none#备注",
+      "disabled": false,
+      "userAgent": ""
+    }
+  },
+  "profiles": [
+    {
+      "token": "请替换为长随机串-用户甲",
+      "sources": ["airportA", "airportB"]
+    },
+    {
+      "token": "请替换为长随机串-用户乙",
+      "sources": ["airportB", "inlineNode"]
+    }
+  ]
+}
