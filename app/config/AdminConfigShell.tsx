@@ -1,10 +1,27 @@
 'use client';
 
+import '@/app/config/admin-animal-modal.css';
 import { IslandTabs } from '@/app/config/IslandTabs';
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import {
   Button,
   Card,
-  Checkbox,
   Cursor,
   Divider,
   Footer,
@@ -13,7 +30,7 @@ import {
   Switch,
 } from 'animal-island-ui';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 
 type PoolRecord = Record<string, { url: string; disabled: boolean; userAgent: string }>;
 type ProfileRow = { token: string; sources: string[]; name?: string };
@@ -28,13 +45,46 @@ function sortedPoolKeys(pool: PoolRecord): string[] {
   return Object.keys(pool).sort((a, b) => a.localeCompare(b));
 }
 
-function normalizeSources(selection: Array<string | number>, poolKeys: string[]) {
-  const set = new Set(selection.map(String));
-  return poolKeys.filter((key) => set.has(key));
+function orderedSourcesForSave(order: string[], poolKeys: string[]) {
+  const allowed = new Set(poolKeys);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of order) {
+    const k = String(raw).trim();
+    if (!k || !allowed.has(k) || seen.has(k)) {
+      continue;
+    }
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
 }
 
 /** 与 animal-island Switch 胶囊形态一致（库内 small 按钮默认圆角偏小） */
 const poolRowPillButtonStyle = { borderRadius: 9999 } as const;
+
+/** 弹窗内小号虚线胶囊按钮（Input suffix「随机8位」、排序行「移除」等共用） */
+const inputSuffixCompactButtonStyle: CSSProperties = {
+  ...poolRowPillButtonStyle,
+  height: 26,
+  minHeight: 26,
+  padding: '0 9px',
+  fontSize: 11,
+  lineHeight: 1,
+  fontWeight: 600,
+};
+
+/** 弹窗内表单标签：略小于默认，减轻「字太大」观感 */
+const modalFormLabelStyle: CSSProperties = {
+  display: 'block',
+  marginBottom: 6,
+  fontWeight: 600,
+  fontSize: 13,
+  lineHeight: 1.35,
+  color: 'rgba(62, 39, 35, 0.88)',
+};
+
+const modalFormSectionStyle: CSSProperties = { marginTop: 18 };
 
 const TOKEN_RANDOM_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -46,6 +96,114 @@ function randomProfileToken8(): string {
     s += TOKEN_RANDOM_CHARS[buf[i]! % TOKEN_RANDOM_CHARS.length];
   }
   return s;
+}
+
+function SortableProfileSourceRow({ id, onRemove }: { id: string; onRemove: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const rowStyle: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.92 : 1,
+    zIndex: isDragging ? 2 : undefined,
+    boxShadow: isDragging ? '0 8px 20px rgba(0, 0, 0, 0.1)' : undefined,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '5px 8px',
+    borderRadius: 10,
+    border: '1px dashed rgba(0, 0, 0, 0.14)',
+    background: 'rgba(255, 255, 255, 0.55)',
+  };
+  const dragZoneStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+    cursor: 'grab',
+    touchAction: 'none',
+    borderRadius: 8,
+    padding: '2px 2px 2px 0',
+  };
+  return (
+    <div ref={setNodeRef} style={rowStyle}>
+      <div {...attributes} {...listeners} style={dragZoneStyle} title="拖动此行排序">
+        <span
+          aria-hidden
+          style={{
+            userSelect: 'none',
+            opacity: 0.55,
+            fontSize: 12,
+            lineHeight: 1,
+            letterSpacing: -1,
+            flexShrink: 0,
+          }}
+        >
+          ⋮⋮
+        </span>
+        <span
+          style={{
+            flex: 1,
+            fontWeight: 600,
+            fontSize: 13,
+            lineHeight: 1.25,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            userSelect: 'none',
+          }}
+        >
+          {id}
+        </span>
+      </div>
+      <Button type="dashed" size="small" style={inputSuffixCompactButtonStyle} onClick={onRemove}>
+        移除
+      </Button>
+    </div>
+  );
+}
+
+function ProfileDraftSourcesSortable({
+  sources,
+  setSources,
+}: {
+  sources: string[];
+  setSources: Dispatch<SetStateAction<string[]>>;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+    setSources((items) => {
+      const oldIndex = items.indexOf(String(active.id));
+      const newIndex = items.indexOf(String(over.id));
+      if (oldIndex === -1 || newIndex === -1) {
+        return items;
+      }
+      return arrayMove(items, oldIndex, newIndex);
+    });
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={sources} strategy={verticalListSortingStrategy}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          {sources.map((key) => (
+            <SortableProfileSourceRow
+              key={key}
+              id={key}
+              onRemove={() => setSources((prev) => prev.filter((k) => k !== key))}
+            />
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
 }
 
 export default function AdminConfigShell() {
@@ -73,15 +231,10 @@ export default function AdminConfigShell() {
   const [profileDraftIndex, setProfileDraftIndex] = useState<number | null>(null);
   const [profileDraftName, setProfileDraftName] = useState('');
   const [profileDraftToken, setProfileDraftToken] = useState('');
-  const [profileDraftSources, setProfileDraftSources] = useState<Array<string | number>>([]);
+  const [profileDraftSources, setProfileDraftSources] = useState<string[]>([]);
 
   const [pendingDeletePool, setPendingDeletePool] = useState<string | null>(null);
   const [pendingDeleteProfile, setPendingDeleteProfile] = useState<number | null>(null);
-
-  const checkboxOptions = useMemo(
-    () => sortedPoolKeys(pool).map((key) => ({ label: key, value: key })),
-    [pool],
-  );
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -253,11 +406,11 @@ export default function AdminConfigShell() {
   async function saveProfileDraft() {
     const tokenTrim = profileDraftToken.trim();
     const keys = sortedPoolKeys(pool);
-    const ordered = normalizeSources(profileDraftSources, keys);
+    const ordered = orderedSourcesForSave(profileDraftSources, keys);
     if (!tokenTrim || ordered.length === 0) {
       setNotice({
         tone: 'err',
-        text: '客户配置需要填写「令牌」并在链接池中至少勾选 1 个订阅源。',
+        text: '客户配置需要填写「令牌」并至少选择 1 个订阅源（可拖拽调整合并顺序）。',
       });
       return;
     }
@@ -350,7 +503,11 @@ export default function AdminConfigShell() {
         </div>
 
         <Card color={notice?.tone === 'ok' ? 'app-teal' : notice?.tone === 'err' ? 'app-red' : 'warm-peach-pink'}>
-          {notice ? notice.text : loading ? '正在加载配置……' : '提示：勾选客户的订阅来源会按从左到右的链接池排序合并。禁用链接池仍可保留配置但不会参与抓取。'}
+          {notice
+            ? notice.text
+            : loading
+              ? '正在加载配置……'
+              : '提示：在客户档案中按「合并顺序」拖拽排列链接池；合并时从左到右依次抓取。禁用链接池仍可保留配置但不会参与抓取。'}
         </Card>
 
         {adminPwdOk === false ? (
@@ -359,7 +516,7 @@ export default function AdminConfigShell() {
           </Card>
         ) : null}
 
-        <Divider type="wave-yellow" />
+        <Divider type="wave-yellow" style={{ marginTop: 18, marginBottom: 18 }} />
 
         <IslandTabs
           defaultActiveKey="pool"
@@ -506,6 +663,7 @@ export default function AdminConfigShell() {
         <Modal
           typewriter={false}
           open={poolModalOpen}
+          className="admin-animal-modal"
           title={poolModalOriginalKey ? `编辑链接池 · ${poolModalOriginalKey}` : '新建链接池'}
           width={620}
           onClose={() => setPoolModalOpen(false)}
@@ -520,20 +678,20 @@ export default function AdminConfigShell() {
             </>
           }
         >
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>名称（键）</label>
-          <Input allowClear style={{ marginBottom: 14 }} value={poolDraftName} onChange={(e) => setPoolDraftName(e.target.value)} />
-          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>订阅地址（或内联 URI）</label>
+          <label style={modalFormLabelStyle}>名称（键）</label>
+          <Input allowClear style={{ marginBottom: 12 }} value={poolDraftName} onChange={(e) => setPoolDraftName(e.target.value)} />
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>订阅地址（或内联 URI）</label>
           <Input
             allowClear
-            style={{ marginBottom: 14 }}
+            style={{ marginBottom: 12 }}
             placeholder="https://..."
             value={poolDraftUrl}
             onChange={(e) => setPoolDraftUrl(e.target.value)}
           />
-          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>User-Agent（可留空）</label>
-          <Input allowClear style={{ marginBottom: 14 }} value={poolDraftUa} onChange={(e) => setPoolDraftUa(e.target.value)} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 22 }}>
-            <span style={{ fontWeight: 700 }}>启用此源</span>
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>User-Agent（可留空）</label>
+          <Input allowClear style={{ marginBottom: 12 }} value={poolDraftUa} onChange={(e) => setPoolDraftUa(e.target.value)} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...modalFormSectionStyle }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>启用此源</span>
             <Switch
               checked={!poolDraftDisabled}
               checkedChildren="启用"
@@ -546,7 +704,12 @@ export default function AdminConfigShell() {
         <Modal
           typewriter={false}
           open={profileModalOpen}
-          title={profileDraftIndex === null ? '新增客户档案' : '编辑客户档案'}
+          className="admin-animal-modal"
+          title={
+            <span style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.25 }}>
+              {profileDraftIndex === null ? '新增客户档案' : '编辑客户档案'}
+            </span>
+          }
           width={760}
           onClose={() => setProfileModalOpen(false)}
           footer={
@@ -560,43 +723,72 @@ export default function AdminConfigShell() {
             </>
           }
         >
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>客户名称（可选，仅用于控制台展示）</label>
+          <label style={modalFormLabelStyle}>客户名称（可选，仅用于控制台展示）</label>
           <Input
             allowClear
-            size="large"
-            style={{ marginBottom: 14 }}
+            style={{ marginBottom: 12 }}
             placeholder="例如：公司 A、家用"
             value={profileDraftName}
             onChange={(e) => setProfileDraftName(e.target.value)}
           />
-          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>客户令牌 · /sub?token</label>
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>客户令牌 · /sub?token</label>
           <Input
             allowClear
-            size="large"
-            style={{ marginBottom: 14 }}
+            style={{ marginBottom: 12 }}
             value={profileDraftToken}
             onChange={(e) => setProfileDraftToken(e.target.value)}
             suffix={
-              <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={() => setProfileDraftToken(randomProfileToken8())}>
+              <Button
+                type="dashed"
+                size="small"
+                style={inputSuffixCompactButtonStyle}
+                onClick={() => setProfileDraftToken(randomProfileToken8())}
+              >
                 随机8位
               </Button>
             }
           />
-          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>
-            订阅合并顺序（勾选链接池名称）
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>
+            订阅合并顺序（拖动标签区域排序，「移除」不受影响）
           </label>
-          <Checkbox
-            direction="vertical"
-            options={checkboxOptions}
-            size="middle"
-            value={profileDraftSources}
-            onChange={(vals) => setProfileDraftSources(vals)}
-          />
+          {profileDraftSources.length === 0 ? (
+            <div style={{ marginBottom: 12, fontSize: 13 }}>
+              <Card color="brown">暂无来源，请从下方「添加订阅源」中加入链接池。</Card>
+            </div>
+          ) : (
+            <ProfileDraftSourcesSortable sources={profileDraftSources} setSources={setProfileDraftSources} />
+          )}
+          {sortedPoolKeys(pool).length === 0 ? (
+            <Card color="brown">请先在「链接池」页新建至少一个订阅源。</Card>
+          ) : (
+            <>
+              <label style={modalFormLabelStyle}>添加订阅源</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {sortedPoolKeys(pool)
+                  .filter((k) => !profileDraftSources.includes(k))
+                  .map((key) => (
+                    <Button
+                      key={key}
+                      type="dashed"
+                      size="small"
+                      style={poolRowPillButtonStyle}
+                      onClick={() => setProfileDraftSources((prev) => [...prev, key])}
+                    >
+                      + {key}
+                    </Button>
+                  ))}
+              </div>
+              {sortedPoolKeys(pool).every((k) => profileDraftSources.includes(k)) ? (
+                <div style={{ marginTop: 6, opacity: 0.75, fontSize: 12 }}>已包含全部链接池。</div>
+              ) : null}
+            </>
+          )}
         </Modal>
 
         <Modal
           typewriter={false}
           open={Boolean(pendingDeletePool)}
+          className="admin-animal-modal"
           title="删除链接池条目？"
           footer={
             <>
@@ -626,6 +818,7 @@ export default function AdminConfigShell() {
         <Modal
           typewriter={false}
           open={pendingDeleteProfile != null}
+          className="admin-animal-modal"
           title="永久删除这份客户档案？"
           footer={
             <>
@@ -653,7 +846,7 @@ export default function AdminConfigShell() {
           )}
         </Modal>
 
-        <Divider type="wave-yellow" />
+        <Divider type="wave-yellow" style={{ marginTop: 20 }} />
         <Footer type="sea" />
       </main>
     </Cursor>

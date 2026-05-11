@@ -1,0 +1,7 @@
+/**
+ * animal-island-ui Modal：className 挂在外层 .animal-modal-* 上，
+ * 实际 padding 在内层 [class*="animal-modalClipped"]，默认约 48px / 32px。
+ */
+.admin-animal-modal > [class*='animal-modalClipped'] {
+  padding: 56px 56px 44px !important;
+}

@@ -45,9 +45,12 @@ export default function LoginClient() {
       <main
         style={{
           minHeight: '100vh',
+          boxSizing: 'border-box',
           display: 'flex',
           justifyContent: 'center',
+          alignItems: 'center',
           padding: '56px 20px',
+          overflow: 'auto',
         }}
       >
         <Card color="default" style={{ width: '100%', maxWidth: 470, paddingBottom: 8 }}>
@@ -84,7 +87,7 @@ export default function LoginClient() {
           >
             登录
           </Button>
-          <Divider type="line-teal" />
+          <Divider type="line-teal" style={{ marginTop: 14 }} />
           <Footer type="tree" />
         </Card>
       </main>
