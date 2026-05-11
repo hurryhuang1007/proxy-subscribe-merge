@@ -1,5 +1,6 @@
 'use client';
 
+import { ThemeToggle } from '@/app/components/ThemeToggle';
 import '@/app/config/admin-animal-modal.css';
 import { IslandTabs } from '@/app/config/IslandTabs';
 import {
@@ -81,7 +82,7 @@ const modalFormLabelStyle: CSSProperties = {
   fontWeight: 600,
   fontSize: 13,
   lineHeight: 1.35,
-  color: 'rgba(62, 39, 35, 0.88)',
+  color: 'var(--admin-label-color)',
 };
 
 const modalFormSectionStyle: CSSProperties = { marginTop: 18 };
@@ -111,8 +112,8 @@ function SortableProfileSourceRow({ id, onRemove }: { id: string; onRemove: () =
     gap: 6,
     padding: '5px 8px',
     borderRadius: 10,
-    border: '1px dashed rgba(0, 0, 0, 0.14)',
-    background: 'rgba(255, 255, 255, 0.55)',
+    border: '1px dashed var(--admin-sort-row-border)',
+    background: 'var(--admin-sort-row-bg)',
   };
   const dragZoneStyle: CSSProperties = {
     display: 'flex',
@@ -496,6 +497,7 @@ export default function AdminConfigShell() {
           <Card type="title" style={{ flex: '1 1 auto' }}>
             🏠 控制台 · 订阅与链接池配置
           </Card>
+          <ThemeToggle />
           <Button type="dashed" onClick={() => void reload()} disabled={loading}>
             {loading ? '加载中…' : '刷新'}
           </Button>
@@ -552,7 +554,7 @@ export default function AdminConfigShell() {
                           </Button>
                         </div>
                       </div>
-                      <Divider type="line-brown" />
+                      <Divider type="line-brown" style={{ marginTop: 8, marginBottom: 16 }} />
                       <div style={{ display: 'grid', gap: 8 }}>
                         <div>
                           <span style={{ fontWeight: 600 }}>地址：</span>

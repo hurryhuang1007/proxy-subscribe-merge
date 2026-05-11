@@ -1,0 +1,327 @@
+/**
+ * 页面壳层 + 动森系浅色 / 暗色主题（animal-island-ui 部分类名为版本哈希，升级库后若失效请对照 dist/index.css 更新）。
+ */
+
+:root {
+  /* 控制台内联样式用 */
+  --admin-label-color: rgba(62, 39, 35, 0.88);
+  --admin-sort-row-bg: rgba(255, 255, 255, 0.55);
+  --admin-sort-row-border: rgba(0, 0, 0, 0.14);
+
+  /* 浅色：蛋壳白 / 极淡暖灰（参考动森系站点：暖感来自低饱和 cream，而非明显黄色） */
+  --animal-text-color: #5d4037;
+  --animal-text-color-muted: #6d5246;
+  --animal-bg-color: #fdfaf5;
+  --animal-bg-color-secondary: #f5f1ea;
+  --animal-bg-color-disabled: #efe9e2;
+  --animal-border-color-light: #e9e3db;
+  --animal-text-color-secondary: #7d6f63;
+  --animal-shadow-base: 0 3px 10px 0 rgba(61, 48, 40, 0.07);
+  --animal-shadow-lg: 0 8px 24px 0 rgba(61, 48, 40, 0.09);
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+/* 浅色页背景：#FDF8F1 ~ #F9F5EE 一带的蛋壳色，边缘仅略收为灰褐 */
+body {
+  margin: 0;
+  background: radial-gradient(
+    ellipse 125% 100% at 50% 15%,
+    #fefcfb 0%,
+    #fdf8f1 28%,
+    #faf6ee 55%,
+    #f3efe6 82%,
+    #ebe4da 100%
+  );
+  background-attachment: fixed;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  --admin-label-color: rgba(232, 228, 216, 0.92);
+  --admin-sort-row-bg: rgba(36, 52, 48, 0.65);
+  --admin-sort-row-border: rgba(220, 235, 228, 0.18);
+
+  --animal-text-color: #e8e4d8;
+  --animal-text-color-secondary: #b5aea0;
+  --animal-text-color-muted: #c9c2b4;
+  --animal-text-color-disabled: #6a756f;
+  --animal-border-color: #4d6058;
+  --animal-border-color-hover: #6a8278;
+  --animal-border-color-light: #3d4f48;
+  --animal-bg-color: #243530;
+  --animal-bg-color-secondary: #1a2824;
+  --animal-bg-color-disabled: #1e2c28;
+  --animal-primary-color-bg: #1a3d36;
+  --animal-shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, 0.25);
+  --animal-shadow-base: 0 3px 12px 0 rgba(0, 0, 0, 0.35);
+  --animal-shadow-lg: 0 8px 28px 0 rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme='dark'] body {
+  background: radial-gradient(ellipse 120% 85% at 50% -10%, #1e4038 0%, #152a28 48%, #0f1c1a 100%);
+  background-attachment: fixed;
+}
+
+/* —— 暗色：库内写死的卡片 / 标签 / 输入 —— */
+html[data-theme='dark'] .animal-card-DJ515 {
+  background: #2a3834;
+  color: #e8e4d8;
+}
+
+html[data-theme='dark'] .animal-card-title-PL-WB {
+  background: #34423e;
+  color: #f2efe6;
+}
+
+html[data-theme='dark'] .animal-card-dashed-fqnm1 {
+  background: #263632;
+  border-color: rgba(200, 220, 210, 0.22);
+}
+
+html[data-theme='dark'] .animal-card-dashed-fqnm1:hover {
+  border-color: rgba(220, 235, 228, 0.35);
+}
+
+html[data-theme='dark'] .animal-card-brown-hLCrx {
+  background: #4a5a52;
+  color: #f0ebe3;
+}
+
+html[data-theme='dark'] .animal-card-app-yellow-DWB-L {
+  background: #5c5538;
+  color: #f5eccc;
+}
+
+html[data-theme='dark'] .animal-card-warm-peach-pink-RlSVo {
+  background: #8b5348;
+  color: #fff5f2;
+}
+
+html[data-theme='dark'] .animal-card-app-pink-3Eo8d {
+  background: #8f4a5a;
+  color: #fff5f7;
+}
+
+html[data-theme='dark'] .animal-card-app-teal-R5kFG {
+  background: #3d7a6c;
+  color: #f0faf7;
+}
+
+html[data-theme='dark'] .animal-card-app-red-DzE0l {
+  background: #a84845;
+  color: #fff5f4;
+}
+
+html[data-theme='dark'] .animal-tabs-I3QAo {
+  background: #1e2c28;
+  border-color: #3d4f48;
+}
+
+html[data-theme='dark'] .animal-tabList--fYUP {
+  background: rgba(30, 44, 40, 0.6);
+  border-bottom-color: #3d4f48;
+}
+
+html[data-theme='dark'] .animal-tabItem-Ehph4 {
+  color: #c9c2b4;
+}
+
+html[data-theme='dark'] .animal-tabItem-Ehph4:hover {
+  background: rgba(25, 200, 185, 0.12);
+  color: #e8e4d8;
+}
+
+html[data-theme='dark'] .animal-tabItem-Ehph4.animal-active-AoX4Y {
+  background: #3d8f7f;
+  color: #f5f5eb;
+  box-shadow: 0 3px rgba(0, 0, 0, 0.25);
+}
+
+html[data-theme='dark'] .animal-tabContentInner-Y5kRC {
+  color: var(--animal-text-color-secondary);
+}
+
+html[data-theme='dark'] .animal-wrapper-IRrhj {
+  background: #2a3834;
+  border-color: #5a6e66;
+  box-shadow: 0 3px #1a2420;
+}
+
+html[data-theme='dark'] .animal-wrapper-IRrhj:hover:not(.animal-wrapper-disabled-MWwHK) {
+  border-color: #7a8f86;
+  box-shadow: 0 3px #2a3834;
+}
+
+html[data-theme='dark'] .animal-input-12WUn {
+  color: #e8e4d8;
+}
+
+html[data-theme='dark'] .animal-input-12WUn::placeholder {
+  color: #7a857f;
+}
+
+/* 主按钮：库内 :hover / :active 规则特异性更高，会盖掉仅写默认态的暗色背景，须单独覆盖 */
+html[data-theme='dark'] .animal-btn-primary-9tMG9:not(.animal-btn-danger-zQ4kF) {
+  color: #fdfcf6;
+  background: #3d5c52;
+  border-color: #3d5c52;
+  box-shadow: 0 5px #243832;
+}
+
+html[data-theme='dark'] .animal-btn-primary-9tMG9:not(.animal-btn-danger-zQ4kF):hover:not(:disabled) {
+  color: #fffefb;
+  background: #4f7d6f;
+  border-color: #5a8f7f;
+  box-shadow: 0 6px #2a453d;
+  transform: translateY(-1px);
+}
+
+html[data-theme='dark'] .animal-btn-primary-9tMG9:not(.animal-btn-danger-zQ4kF):active:not(:disabled) {
+  color: #f5f0e6;
+  background: #355749;
+  border-color: #355749;
+  transform: translateY(2px);
+  box-shadow: 0 1px #162622;
+}
+
+html[data-theme='dark'] .animal-btn-danger-zQ4kF.animal-btn-primary-9tMG9 {
+  color: #fff;
+  background: var(--animal-error-color);
+  border-color: var(--animal-error-color);
+  box-shadow: 0 5px 0 0 var(--animal-error-color-active);
+}
+
+html[data-theme='dark'] .animal-btn-danger-zQ4kF.animal-btn-primary-9tMG9:hover:not(:disabled) {
+  background: var(--animal-error-color-hover);
+  border-color: var(--animal-error-color-hover);
+  box-shadow: 0 6px 0 0 var(--animal-error-color-active);
+  transform: translateY(-1px);
+}
+
+html[data-theme='dark'] .animal-btn-danger-zQ4kF.animal-btn-primary-9tMG9:active:not(:disabled) {
+  background: var(--animal-error-color-active);
+  border-color: var(--animal-error-color-active);
+  box-shadow: 0 1px 0 0 var(--animal-error-color-active);
+  transform: translateY(2px);
+}
+
+html[data-theme='dark'] .animal-btn-default-L7yE6,
+html[data-theme='dark'] .animal-btn-dashed-wzZ-i {
+  color: #e8e4d8;
+  background: #2a3834;
+  border-color: #5a6e66;
+}
+
+html[data-theme='dark'] .animal-modalClipped-7IuAw {
+  background: #2d3b36;
+  color: #d4cfc4;
+}
+
+html[data-theme='dark'] .animal-title-s6pv3,
+html[data-theme='dark'] .animal-close-U6E4A {
+  color: #e8e4d8;
+}
+
+html[data-theme='dark'] .animal-body--aiyx {
+  color: #c4bdb0;
+}
+
+html[data-theme='dark'] .animal-footer-btn-zlWAg {
+  color: #e8e4d8;
+  border-color: rgba(232, 228, 216, 0.35);
+}
+
+html[data-theme='dark'] .animal-mask-hAWeP {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+html[data-theme='dark'] .animal-switch-NQPLj {
+  background: #3a4540;
+  border-color: #5a6e66;
+}
+
+/* 勾选态：单独提高特异性，否则上一段会压过库内 .animal-switch-checked 的绿色，导致仅 hover 时才像「变绿」 */
+html[data-theme='dark'] .animal-switch-NQPLj.animal-switch-checked-6HKL4 {
+  background: #4a8a5e;
+  border-color: #6fba2c;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme='dark'] .animal-switch-NQPLj.animal-switch-checked-6HKL4:hover:not(.animal-switch-disabled-U5tjL) {
+  background: #5a9c6e;
+  border-color: #7ed68a;
+}
+
+html[data-theme='dark'] .animal-switch-NQPLj:not(.animal-switch-checked-6HKL4):hover:not(.animal-switch-disabled-U5tjL) {
+  border-color: #7a8f86;
+}
+
+html[data-theme='dark'] .animal-handle-KgZ7M {
+  background: #f0ebe0;
+  border-color: #5a6e66;
+  box-shadow: 0 3px #2a322e;
+}
+
+html[data-theme='dark'] .animal-switch-NQPLj.animal-switch-checked-6HKL4 .animal-handle-KgZ7M {
+  background: #f5fcf3;
+  border-color: #5cbf4a;
+  box-shadow: 0 3px #2d6b38;
+}
+
+html[data-theme='dark'] .animal-switch-small-jkWtD.animal-switch-checked-6HKL4 .animal-handle-KgZ7M {
+  box-shadow: 0 2px #2d6b38;
+}
+
+html[data-theme='dark'] .animal-wave-yellow-AO-io {
+  opacity: 0.55;
+  filter: brightness(0.92);
+}
+
+html[data-theme='dark'] .animal-divider-ZBhpE {
+  opacity: 0.5;
+}
+
+html[data-theme='dark'] .animal-footer-5DMOR {
+  opacity: 0.85;
+  filter: saturate(0.85);
+}
+
+/* 主题切换按钮 */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 16px;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  border-radius: 50px;
+  border: 2px dashed var(--animal-border-color);
+  background: var(--animal-bg-color);
+  color: var(--animal-text-color);
+  box-shadow: var(--animal-shadow-sm);
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.theme-toggle-btn:hover {
+  color: var(--animal-primary-color);
+  border-color: var(--animal-primary-color);
+  transform: translateY(-1px);
+  box-shadow: var(--animal-shadow-base);
+}
+
+.theme-toggle-btn:focus-visible {
+  outline: 2px solid var(--animal-primary-color);
+  outline-offset: 2px;
+}

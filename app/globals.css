@@ -5,9 +5,7 @@ body {
   min-height: 100%;
 }
 
-body {
-  background: radial-gradient(ellipse at top, rgb(247, 243, 223) 0%, #e8dfb8 52%, #c9be95 120%);
-}
+/* 页背景与主题变量见 animal-appearance.css */
 
 /*
  * animal-island-ui Input：外壳固定高度 + align-items:center，内部原生 input 按行高收缩，

@@ -1,5 +1,6 @@
 'use client';
 
+import { ThemeToggle } from '@/app/components/ThemeToggle';
 import { Button, Card, Cursor, Divider, Footer, Input } from 'animal-island-ui';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -44,6 +45,7 @@ export default function LoginClient() {
     <Cursor>
       <main
         style={{
+          position: 'relative',
           minHeight: '100vh',
           boxSizing: 'border-box',
           display: 'flex',
@@ -53,6 +55,9 @@ export default function LoginClient() {
           overflow: 'auto',
         }}
       >
+        <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 2 }}>
+          <ThemeToggle />
+        </div>
         <Card color="default" style={{ width: '100%', maxWidth: 470, paddingBottom: 8 }}>
           <Card type="title" style={{ marginBottom: 12 }}>
             🏝 管理登录 · 订阅合并网关
@@ -68,7 +73,9 @@ export default function LoginClient() {
             </Card>
           ) : null}
           <Divider type="wave-yellow" />
-          <label style={{ display: 'block', marginTop: 16, marginBottom: 8, fontWeight: 600 }}>管理密码</label>
+          <label style={{ display: 'block', marginTop: 16, marginBottom: 8, fontWeight: 600, color: 'var(--animal-text-color)' }}>
+            管理密码
+          </label>
           <Input
             allowClear
             type="password"
