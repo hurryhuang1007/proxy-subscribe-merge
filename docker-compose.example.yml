@@ -1,8 +1,17 @@
-# 复制为 docker-compose.yml，放好 config.json 后在同目录执行：
+# 复制为 docker-compose.yml，在同目录放好 config.json 后执行：
+#   docker compose up -d
+# 默认从 GHCR 拉取已构建镜像。若要本地构建：
 #   docker compose up -d --build
+#
+# 将 GitHub 仓库设为公开：仓库页 Settings → Danger zone → Change repository visibility → Public。
+# GHCR 镜像默认可仍为 Private：Packages → proxy-subscribe-merge → Package settings → Change visibility → Public，
+# 否则拉取前需执行 docker login ghcr.io（使用有 read:packages 权限的 PAT）。
+#
+# 若 fork 本仓库，请把 image 改为 ghcr.io/<你的用户名>/<仓库名小写>:标签
 
 services:
   gateway:
+    image: ghcr.io/hurryhuang1007/proxy-subscribe-merge:latest
     build: .
     restart: unless-stopped
     ports:
