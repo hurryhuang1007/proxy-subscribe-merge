@@ -16,7 +16,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type PoolRecord = Record<string, { url: string; disabled: boolean; userAgent: string }>;
-type ProfileRow = { token: string; sources: string[] };
+type ProfileRow = { token: string; sources: string[]; name?: string };
 
 type ApiConfig = {
   subscriptionPool: PoolRecord;
@@ -35,6 +35,18 @@ function normalizeSources(selection: Array<string | number>, poolKeys: string[])
 
 /** 与 animal-island Switch 胶囊形态一致（库内 small 按钮默认圆角偏小） */
 const poolRowPillButtonStyle = { borderRadius: 9999 } as const;
+
+const TOKEN_RANDOM_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+function randomProfileToken8(): string {
+  const buf = new Uint8Array(8);
+  crypto.getRandomValues(buf);
+  let s = '';
+  for (let i = 0; i < 8; i++) {
+    s += TOKEN_RANDOM_CHARS[buf[i]! % TOKEN_RANDOM_CHARS.length];
+  }
+  return s;
+}
 
 export default function AdminConfigShell() {
   const router = useRouter();
@@ -59,6 +71,7 @@ export default function AdminConfigShell() {
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileDraftIndex, setProfileDraftIndex] = useState<number | null>(null);
+  const [profileDraftName, setProfileDraftName] = useState('');
   const [profileDraftToken, setProfileDraftToken] = useState('');
   const [profileDraftSources, setProfileDraftSources] = useState<Array<string | number>>([]);
 
@@ -213,7 +226,7 @@ export default function AdminConfigShell() {
     delete nextPool[key];
     const nextProfiles = profiles
       .map((row) => ({
-        token: row.token,
+        ...row,
         sources: row.sources.filter((name) => name !== key),
       }))
       .filter((row) => row.sources.length > 0);
@@ -224,11 +237,13 @@ export default function AdminConfigShell() {
   function openProfile(add: boolean, index?: number) {
     if (add || index == null) {
       setProfileDraftIndex(null);
+      setProfileDraftName('');
       setProfileDraftToken('');
       setProfileDraftSources([]);
     } else {
       const row = profiles[index];
       setProfileDraftIndex(index);
+      setProfileDraftName(row.name?.trim() ?? '');
       setProfileDraftToken(row.token);
       setProfileDraftSources([...row.sources]);
     }
@@ -257,7 +272,12 @@ export default function AdminConfigShell() {
       return;
     }
 
-    const rowDef: ProfileRow = { token: tokenTrim, sources: ordered };
+    const nameTrim = profileDraftName.trim();
+    const rowDef: ProfileRow = {
+      token: tokenTrim,
+      sources: ordered,
+      ...(nameTrim ? { name: nameTrim } : {}),
+    };
     if (profileDraftIndex == null) {
       nextProfiles = [...profiles, rowDef];
     } else {
@@ -408,7 +428,14 @@ export default function AdminConfigShell() {
                     <Card key={`${row.token}-${idx}`} type="dashed" style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                         <div>
-                          <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{row.token}</div>
+                          {row.name ? (
+                            <>
+                              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{row.name}</div>
+                              <div style={{ marginTop: 4, opacity: 0.88, fontSize: 13 }}>令牌 · {row.token}</div>
+                            </>
+                          ) : (
+                            <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{row.token}</div>
+                          )}
                           <div style={{ marginTop: 6, opacity: 0.92 }}>{row.sources.join(' → ')}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -533,8 +560,28 @@ export default function AdminConfigShell() {
             </>
           }
         >
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>客户令牌 · /sub?token</label>
-          <Input allowClear size="large" style={{ marginBottom: 14 }} value={profileDraftToken} onChange={(e) => setProfileDraftToken(e.target.value)} />
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>客户名称（可选，仅用于控制台展示）</label>
+          <Input
+            allowClear
+            size="large"
+            style={{ marginBottom: 14 }}
+            placeholder="例如：公司 A、家用"
+            value={profileDraftName}
+            onChange={(e) => setProfileDraftName(e.target.value)}
+          />
+          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>客户令牌 · /sub?token</label>
+          <Input
+            allowClear
+            size="large"
+            style={{ marginBottom: 14 }}
+            value={profileDraftToken}
+            onChange={(e) => setProfileDraftToken(e.target.value)}
+            suffix={
+              <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={() => setProfileDraftToken(randomProfileToken8())}>
+                随机8位
+              </Button>
+            }
+          />
           <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>
             订阅合并顺序（勾选链接池名称）
           </label>
@@ -592,7 +639,18 @@ export default function AdminConfigShell() {
           }
           onClose={() => setPendingDeleteProfile(null)}
         >
-          令牌：{pendingDeleteProfile != null ? profiles[pendingDeleteProfile]?.token ?? '—' : '—'}
+          {pendingDeleteProfile != null ? (
+            <>
+              {profiles[pendingDeleteProfile]?.name ? (
+                <div style={{ marginBottom: 8 }}>
+                  名称：<strong>{profiles[pendingDeleteProfile]?.name}</strong>
+                </div>
+              ) : null}
+              <div>令牌：{profiles[pendingDeleteProfile]?.token ?? '—'}</div>
+            </>
+          ) : (
+            '—'
+          )}
         </Modal>
 
         <Divider type="wave-yellow" />

@@ -19,6 +19,7 @@
   },
   "profiles": [
     {
+      "name": "用户甲（展示名可选）",
       "token": "请替换为长随机串-用户甲",
       "sources": ["airportA", "airportB"]
     },

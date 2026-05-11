@@ -1,4 +1,4 @@
-import type { SubscriptionPoolEntry } from '@/lib/config';
+import type { ProfileEntry, SubscriptionPoolEntry } from '@/lib/config';
 
 const MAX_SOURCE_BYTES = Number(process.env.MAX_SOURCE_BYTES || 20_000_000);
 
@@ -97,7 +97,7 @@ export async function fetchHttpSourceBody(url: string, ua: string) {
 export type WarnLogger = Pick<Console, 'warn'>;
 
 export async function mergeShareLinksForProfile(
-  profile: { token: string; sources: string[] },
+  profile: Pick<ProfileEntry, 'sources'>,
   subscriptionPool: Map<string, SubscriptionPoolEntry>,
   log: WarnLogger,
 ) {

@@ -9,10 +9,23 @@ export type SubscriptionPoolEntryRaw = {
   userAgent?: string;
 };
 
+export type ProfileEntryRaw = {
+  token: string;
+  sources: string[];
+  /** 可选展示名，便于在控制台区分客户；不影响 /sub?token 鉴权 */
+  name?: string;
+};
+
+export type ProfileEntry = {
+  token: string;
+  sources: string[];
+  name: string;
+};
+
 export type AppConfigRaw = {
   adminPassword?: string;
   subscriptionPool: Record<string, SubscriptionPoolEntryRaw>;
-  profiles: Array<{ token: string; sources: string[] }>;
+  profiles: ProfileEntryRaw[];
 };
 
 export type SubscriptionPoolEntry = {
@@ -24,7 +37,7 @@ export type SubscriptionPoolEntry = {
 
 let cachedConfig: {
   mtimeMs: number;
-  byToken: Map<string, { token: string; sources: string[] }>;
+  byToken: Map<string, ProfileEntry>;
   subscriptionPool: Map<string, SubscriptionPoolEntry>;
   adminPassword: string;
   rawData: AppConfigRaw;
@@ -56,12 +69,12 @@ function parseSubscriptionPool(data: unknown): Map<string, SubscriptionPoolEntry
   return out;
 }
 
-function parseProfiles(data: unknown, pool: Map<string, SubscriptionPoolEntry>): Map<string, { token: string; sources: string[] }> {
+function parseProfiles(data: unknown, pool: Map<string, SubscriptionPoolEntry>): Map<string, ProfileEntry> {
   const profiles = (data as AppConfigRaw)?.profiles;
   if (!data || !Array.isArray(profiles)) {
     throw new Error('config: root must have a "profiles" array');
   }
-  const byToken = new Map<string, { token: string; sources: string[] }>();
+  const byToken = new Map<string, ProfileEntry>();
   for (let i = 0; i < profiles.length; i++) {
     const src = profiles[i];
     if (!src || typeof src.token !== 'string' || src.token.length === 0) {
@@ -74,6 +87,8 @@ function parseProfiles(data: unknown, pool: Map<string, SubscriptionPoolEntry>):
     if (!Array.isArray(src.sources) || src.sources.length === 0) {
       throw new Error(`config: profiles[${i}] needs non-empty "sources"`);
     }
+    const nameRaw = (src as ProfileEntryRaw).name;
+    const name = nameRaw == null ? '' : String(nameRaw).trim();
     const sources: string[] = [];
     for (let j = 0; j < src.sources.length; j++) {
       const sourceName = typeof src.sources[j] === 'string' ? src.sources[j].trim() : '';
@@ -85,7 +100,7 @@ function parseProfiles(data: unknown, pool: Map<string, SubscriptionPoolEntry>):
       }
       sources.push(sourceName);
     }
-    byToken.set(token, { token, sources });
+    byToken.set(token, { token, sources, name });
   }
   return byToken;
 }
@@ -132,7 +147,7 @@ export async function getProfileByToken(token: string) {
   return cachedConfig.byToken.get(token.trim()) ?? null;
 }
 
-export async function saveConfigPartial(partial: { subscriptionPool: AppConfigRaw['subscriptionPool']; profiles: AppConfigRaw['profiles'] }) {
+export async function saveConfigPartial(partial: { subscriptionPool: AppConfigRaw['subscriptionPool']; profiles: ProfileEntryRaw[] }) {
   const CONFIG_PATH = getConfigPath();
   const existing = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as AppConfigRaw;
   const next: AppConfigRaw = {
