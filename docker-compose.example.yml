@@ -8,6 +8,11 @@
 # 否则拉取前需执行 docker login ghcr.io（使用有 read:packages 权限的 PAT）。
 #
 # 若 fork 本仓库，请把 image 改为 ghcr.io/<你的用户名>/<仓库名小写>:标签
+#
+# 保存配置报 EACCES：确保 ./config.json 对容器内用户可写。镜像入口会尝试 chown/chmod
+# CONFIG_PATH 指向的文件；若仍失败（如部分桌面 Docker），在宿主机执行：
+#   chmod u+rw config.json
+# 或 chown 为镜像内 UID 1001：  chown 1001:1001 config.json
 
 services:
   gateway:
