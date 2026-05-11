@@ -8,3 +8,31 @@ body {
 body {
   background: radial-gradient(ellipse at top, rgb(247, 243, 223) 0%, #e8dfb8 52%, #c9be95 120%);
 }
+
+/*
+ * animal-island-ui Input：外壳固定高度 + align-items:center，内部原生 input 按行高收缩，
+ * 视觉上会像「文字离下边框有空隙」。改为纵向拉伸 input，前后缀与清除按钮仍居中。
+ * 类名哈希随库版本而变；若升级 animal-island-ui 后失效，对照 dist/index.css 更新选择器。
+ */
+span.animal-wrapper-middle-zXqMR,
+span.animal-wrapper-small-mWvja,
+span.animal-wrapper-large-RrYM4 {
+  align-items: stretch !important;
+}
+
+span.animal-wrapper-middle-zXqMR > span,
+span.animal-wrapper-small-mWvja > span,
+span.animal-wrapper-large-RrYM4 > span {
+  align-self: center;
+}
+
+span.animal-wrapper-middle-zXqMR > input,
+span.animal-wrapper-small-mWvja > input,
+span.animal-wrapper-large-RrYM4 > input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  line-height: normal;
+  padding-block: 0;
+}

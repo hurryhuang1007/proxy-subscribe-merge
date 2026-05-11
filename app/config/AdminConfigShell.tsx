@@ -33,14 +33,8 @@ function normalizeSources(selection: Array<string | number>, poolKeys: string[])
   return poolKeys.filter((key) => set.has(key));
 }
 
-/** 链接池操作列等宽居中，不拉伸子控件 */
-const poolActionColumnStyle = {
-  width: 88,
-  flexShrink: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-} as const;
+/** 与 animal-island Switch 胶囊形态一致（库内 small 按钮默认圆角偏小） */
+const poolRowPillButtonStyle = { borderRadius: 9999 } as const;
 
 export default function AdminConfigShell() {
   const router = useRouter();
@@ -366,25 +360,19 @@ export default function AdminConfigShell() {
                         <Card type="title" style={{ margin: 0 }}>
                           {key}
                         </Card>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <div style={poolActionColumnStyle}>
-                            <Switch
-                              checked={!(pool[key]?.disabled ?? false)}
-                              checkedChildren="启用"
-                              unCheckedChildren="禁用"
-                              onChange={(enabled) => void persistPoolDisabled(key, !enabled)}
-                            />
-                          </div>
-                          <div style={poolActionColumnStyle}>
-                            <Button type="dashed" size="small" onClick={() => openPoolEdit(key)}>
-                              修改
-                            </Button>
-                          </div>
-                          <div style={poolActionColumnStyle}>
-                            <Button type="primary" danger size="small" onClick={() => setPendingDeletePool(key)}>
-                              删除
-                            </Button>
-                          </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                          <Switch
+                            checked={!(pool[key]?.disabled ?? false)}
+                            checkedChildren="启用"
+                            unCheckedChildren="禁用"
+                            onChange={(enabled) => void persistPoolDisabled(key, !enabled)}
+                          />
+                          <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={() => openPoolEdit(key)}>
+                            修改
+                          </Button>
+                          <Button type="primary" danger size="small" style={poolRowPillButtonStyle} onClick={() => setPendingDeletePool(key)}>
+                            删除
+                          </Button>
                         </div>
                       </div>
                       <Divider type="line-brown" />
@@ -507,7 +495,7 @@ export default function AdminConfigShell() {
         >
           <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>名称（键）</label>
           <Input allowClear style={{ marginBottom: 14 }} value={poolDraftName} onChange={(e) => setPoolDraftName(e.target.value)} />
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>订阅地址（或内联 URI）</label>
+          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>订阅地址（或内联 URI）</label>
           <Input
             allowClear
             style={{ marginBottom: 14 }}
@@ -515,15 +503,15 @@ export default function AdminConfigShell() {
             value={poolDraftUrl}
             onChange={(e) => setPoolDraftUrl(e.target.value)}
           />
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>User-Agent（可留空）</label>
+          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>User-Agent（可留空）</label>
           <Input allowClear style={{ marginBottom: 14 }} value={poolDraftUa} onChange={(e) => setPoolDraftUa(e.target.value)} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontWeight: 700 }}>停用此源</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 22 }}>
+            <span style={{ fontWeight: 700 }}>启用此源</span>
             <Switch
-              checked={poolDraftDisabled}
-              checkedChildren="禁用"
-              unCheckedChildren="启用"
-              onChange={setPoolDraftDisabled}
+              checked={!poolDraftDisabled}
+              checkedChildren="启用"
+              unCheckedChildren="禁用"
+              onChange={(enabled) => setPoolDraftDisabled(!enabled)}
             />
           </div>
         </Modal>
@@ -547,7 +535,9 @@ export default function AdminConfigShell() {
         >
           <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>客户令牌 · /sub?token</label>
           <Input allowClear size="large" style={{ marginBottom: 14 }} value={profileDraftToken} onChange={(e) => setProfileDraftToken(e.target.value)} />
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 700 }}>订阅合并顺序（勾选链接池名称）</label>
+          <label style={{ display: 'block', marginTop: 22, marginBottom: 8, fontWeight: 700 }}>
+            订阅合并顺序（勾选链接池名称）
+          </label>
           <Checkbox
             direction="vertical"
             options={checkboxOptions}
