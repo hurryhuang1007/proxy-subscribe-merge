@@ -1,6 +1,7 @@
 {
   "name": "proxy-subscribe-merge",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "engines": {
