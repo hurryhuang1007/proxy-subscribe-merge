@@ -96,6 +96,28 @@ export async function fetchHttpSourceBody(url: string, ua: string) {
 
 export type WarnLogger = Pick<Console, 'warn'>;
 
+export async function mergeShareLinksForSource(
+  sourceName: string,
+  subscriptionPool: Map<string, SubscriptionPoolEntry>,
+  log: WarnLogger,
+) {
+  const source = subscriptionPool.get(sourceName);
+  if (!source || source.disabled) {
+    return [];
+  }
+  const { url, userAgent } = source;
+  try {
+    if (/^https?:\/\//i.test(url)) {
+      const text = await fetchHttpSourceBody(url, userAgent);
+      return extractShareLinksFromSubscriptionText(text);
+    }
+    return extractShareLinksFromSubscriptionText(url);
+  } catch (err) {
+    log.warn(`source (${sourceName}) fetch failed; skipped`, err);
+    return [];
+  }
+}
+
 export async function mergeShareLinksForProfile(
   profile: Pick<ProfileEntry, 'sources'>,
   subscriptionPool: Map<string, SubscriptionPoolEntry>,

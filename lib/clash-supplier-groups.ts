@@ -2,25 +2,11 @@ import type { SubscriptionPoolEntry } from '@/lib/config';
 
 const PROBE_URL = 'http://www.gstatic.com/generate_204';
 
-function escapeRegex(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function probeOptsForProvider(providerName: string) {
   return {
     url: PROBE_URL,
     interval: 300,
     use: [providerName],
-  };
-}
-
-function probeOptsForInlineSource(sourceName: string) {
-  const escaped = escapeRegex(sourceName);
-  return {
-    url: PROBE_URL,
-    interval: 300,
-    'include-all': true,
-    filter: `(?i)\\[${escaped}\\]$`,
   };
 }
 
@@ -71,11 +57,7 @@ export function buildSupplierProxyGroups(
     const entry = pool.get(sourceName);
     if (!entry || entry.disabled) continue;
 
-    const probe = /^https?:\/\//i.test(entry.url)
-      ? probeOptsForProvider(sourceName)
-      : probeOptsForInlineSource(sourceName);
-
-    appendSupplierModeGroups(groups, modePickerNames, sourceName, probe);
+    appendSupplierModeGroups(groups, modePickerNames, sourceName, probeOptsForProvider(sourceName));
   }
 
   return { modePickerNames, groups };
