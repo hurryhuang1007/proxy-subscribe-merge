@@ -19,7 +19,7 @@ function appendSupplierModeGroups(
   const delay = `${sourceName} 延迟最低`;
   const fallback = `${sourceName} 故障切换`;
   const balance = `${sourceName} 负载均衡`;
-  const manual = `${sourceName} 手动`;
+  const manual = `${sourceName} 手动切换`;
 
   modePickerNames.push(delay, fallback, balance, manual);
   groups.push({
@@ -70,7 +70,7 @@ export function legacySupplierGroupNames(sources: string[]) {
     names.add(`${sourceName} 延迟最低`);
     names.add(`${sourceName} 故障切换`);
     names.add(`${sourceName} 负载均衡`);
-    names.add(`${sourceName} 手动`);
+    names.add(`${sourceName} 手动切换`);
   }
   return names;
 }

@@ -29,18 +29,26 @@ type RegionDef = {
 };
 
 const REGIONS: RegionDef[] = [
-  { prefix: '🇭🇰', label: '香港', filter: '(?i)(港|hk|hong\\s*kong|hkg|香港)' },
+  { prefix: '🇭🇰', label: '香港', filter: '(?i)(港|hk|hong[\\s+]+kong|hkg|香港)' },
   { prefix: '🇹🇼', label: '台湾', filter: '(?i)(台|tw|taiwan|台北|高雄|台湾)' },
   { prefix: '🇯🇵', label: '日本', filter: '(?i)(日|jp|japan|东京|大阪|日本)' },
   { prefix: '🇰🇷', label: '韩国', filter: '(?i)(韩|kr|korea|首尔|韩国)' },
-  { prefix: '🇺🇸', label: '美国', filter: '(?i)(美|us|usa|united\\s*states|洛杉矶|纽约|西雅图|美国)' },
-  { prefix: '🇸🇬', label: '新加坡', filter: '(?i)(新加坡|狮城|sg|singapore)' },
-  { prefix: '🇬🇧', label: '英国', filter: '(?i)(英|uk|gb|britain|london|伦敦|英国)' },
+  { prefix: '🇺🇸', label: '美国', filter: '(?i)(美|us|usa|united[\\s+]+states|洛杉矶|纽约|西雅图|美国)' },
+  {
+    prefix: '🇸🇬',
+    label: '新加坡',
+    filter: '(?i)(新加坡|狮城|singapore|(?:^|[\\s|｜\\-\\[\\]#:,])sg(?:$|[\\s|｜\\-\\[\\]#:,]))',
+  },
+  { prefix: '🇬🇧', label: '英国', filter: '(?i)(英|uk|britain|united[\\s+]+kingdom|london|伦敦|英国)' },
   { prefix: '🇩🇪', label: '德国', filter: '(?i)(德|de|germany|法兰克福|德国)' },
   { prefix: '🇫🇷', label: '法国', filter: '(?i)(法|fr|france|巴黎|法国)' },
   { prefix: '🇦🇺', label: '澳大利亚', filter: '(?i)(澳|au|australia|悉尼|墨尔本|澳大利亚)' },
-  { prefix: '🇨🇦', label: '加拿大', filter: '(?i)(加|ca|canada|多伦多|温哥华|加拿大)' },
-  { prefix: '🇮🇳', label: '印度', filter: '(?i)(印|in|india|孟买|印度)' },
+  {
+    prefix: '🇨🇦',
+    label: '加拿大',
+    filter: '(?i)(加拿大|canada|多伦多|温哥华|蒙特利尔|渥太华|卡尔加里|(?:^|[\\s|｜\\-\\[\\]#:,])ca(?:$|[\\s|｜\\-\\[\\]#:,]))',
+  },
+  { prefix: '🇮🇳', label: '印度', filter: '(?i)(印|india|孟买|印度)' },
   { prefix: '🌐', label: '其他地区' },
 ];
 
@@ -68,7 +76,7 @@ export function buildRegionProxyGroups() {
     const delay = `${prefix} 延迟最低`;
     const fallback = `${prefix} 故障切换`;
     const balance = `${prefix} 负载均衡`;
-    const manual = `${prefix} 手动`;
+    const manual = `${prefix} 手动切换`;
     const probe = filteredProbeOpts(filter);
 
     modePickerNames.push(delay, fallback, balance, manual);
@@ -109,7 +117,7 @@ function isLegacyRegionGroup(name: string) {
       name === `${p} 延迟最低` ||
       name === `${p} 故障切换` ||
       name === `${p} 负载均衡` ||
-      name === `${p} 手动`
+      name === `${p} 手动切换`
     );
   });
 }
