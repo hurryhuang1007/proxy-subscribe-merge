@@ -1,0 +1,94 @@
+import type { SubscriptionPoolEntry } from '@/lib/config';
+
+const PROBE_URL = 'http://www.gstatic.com/generate_204';
+
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function probeOptsForProvider(providerName: string) {
+  return {
+    url: PROBE_URL,
+    interval: 300,
+    use: [providerName],
+  };
+}
+
+function probeOptsForInlineSource(sourceName: string) {
+  const escaped = escapeRegex(sourceName);
+  return {
+    url: PROBE_URL,
+    interval: 300,
+    'include-all': true,
+    filter: `(?i)\\[${escaped}\\]$`,
+  };
+}
+
+function appendSupplierModeGroups(
+  groups: Record<string, unknown>[],
+  modePickerNames: string[],
+  sourceName: string,
+  probe: Record<string, unknown>,
+) {
+  const delay = `${sourceName} 延迟最低`;
+  const fallback = `${sourceName} 故障切换`;
+  const balance = `${sourceName} 负载均衡`;
+  const manual = `${sourceName} 手动`;
+
+  modePickerNames.push(delay, fallback, balance, manual);
+  groups.push({
+    name: delay,
+    type: 'url-test',
+    tolerance: 100,
+    ...probe,
+  });
+  groups.push({
+    name: fallback,
+    type: 'fallback',
+    ...probe,
+  });
+  groups.push({
+    name: balance,
+    type: 'load-balance',
+    strategy: 'consistent-hashing',
+    ...probe,
+  });
+  groups.push({
+    name: manual,
+    type: 'select',
+    ...probe,
+  });
+}
+
+export function buildSupplierProxyGroups(
+  sources: string[],
+  pool: Map<string, SubscriptionPoolEntry>,
+) {
+  const groups: Record<string, unknown>[] = [];
+  const modePickerNames: string[] = [];
+
+  for (const sourceName of sources) {
+    const entry = pool.get(sourceName);
+    if (!entry || entry.disabled) continue;
+
+    const probe = /^https?:\/\//i.test(entry.url)
+      ? probeOptsForProvider(sourceName)
+      : probeOptsForInlineSource(sourceName);
+
+    appendSupplierModeGroups(groups, modePickerNames, sourceName, probe);
+  }
+
+  return { modePickerNames, groups };
+}
+
+export function legacySupplierGroupNames(sources: string[]) {
+  const names = new Set<string>();
+  for (const sourceName of sources) {
+    names.add(`📦 ${sourceName}`);
+    names.add(`${sourceName} 延迟最低`);
+    names.add(`${sourceName} 故障切换`);
+    names.add(`${sourceName} 负载均衡`);
+    names.add(`${sourceName} 手动`);
+  }
+  return names;
+}

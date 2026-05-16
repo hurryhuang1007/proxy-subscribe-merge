@@ -1,4 +1,6 @@
 import { loadConfig, getProfileByToken } from '@/lib/config';
+import { isClashClientUserAgent } from '@/lib/clash';
+import { buildClashProfileYaml, collectInlineShareLinks } from '@/lib/clash-profile';
 import { mergeShareLinksForProfile } from '@/lib/subscribe';
 
 function readToken(url: URL) {
@@ -10,6 +12,14 @@ function readPlain(url: URL) {
   return v === '1' || v === 'true';
 }
 
+function readOutputType(url: URL, req: Request): 'clash' | 'plain' | 'default' {
+  const type = url.searchParams.get('type')?.trim().toLowerCase();
+  if (type === 'clash') return 'clash';
+  if (isClashClientUserAgent(req.headers.get('user-agent'))) return 'clash';
+  if (readPlain(url)) return 'plain';
+  return 'default';
+}
+
 function noStoreHeaders(h: Headers) {
   h.set('cache-control', 'no-store, no-cache, must-revalidate');
   h.set('pragma', 'no-cache');
@@ -18,7 +28,7 @@ function noStoreHeaders(h: Headers) {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const tokenStr = readToken(url);
-  const wantPlain = readPlain(url);
+  const outputType = readOutputType(url, req);
 
   let profile;
   try {
@@ -33,23 +43,63 @@ export async function GET(req: Request) {
   const cfg = await loadConfig();
 
   try {
-    const lines = await mergeShareLinksForProfile(profile, cfg.subscriptionPool, console);
-    if (lines.length === 0) {
-      return new Response('No nodes were found!\n', {
-        status: 404,
-        headers: new Headers([
-          ['content-type', 'text/plain; charset=utf-8'],
-          ['cache-control', 'no-store'],
-        ]),
+    let body: string;
+    let contentType: string;
+    if (outputType === 'clash') {
+      const inlineLinks = collectInlineShareLinks(profile, cfg.subscriptionPool);
+      const hasHttpSource = profile.sources.some((name) => {
+        const s = cfg.subscriptionPool.get(name);
+        return s && !s.disabled && /^https?:\/\//i.test(s.url);
       });
+      if (!hasHttpSource && inlineLinks.length === 0) {
+        return new Response('No nodes were found!\n', {
+          status: 404,
+          headers: new Headers([
+            ['content-type', 'text/plain; charset=utf-8'],
+            ['cache-control', 'no-store'],
+          ]),
+        });
+      }
+      let yaml: string;
+      try {
+        yaml = await buildClashProfileYaml(profile, cfg.subscriptionPool);
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message.includes('ENOENT')) {
+          return Response.json({ error: 'clash_template_missing' }, { status: 500 });
+        }
+        throw e;
+      }
+      if (!yaml) {
+        return new Response('No convertible nodes were found!\n', {
+          status: 404,
+          headers: new Headers([
+            ['content-type', 'text/plain; charset=utf-8'],
+            ['cache-control', 'no-store'],
+          ]),
+        });
+      }
+      body = yaml;
+      contentType = 'text/yaml; charset=utf-8';
+    } else {
+      const lines = await mergeShareLinksForProfile(profile, cfg.subscriptionPool, console);
+      if (lines.length === 0) {
+        return new Response('No nodes were found!\n', {
+          status: 404,
+          headers: new Headers([
+            ['content-type', 'text/plain; charset=utf-8'],
+            ['cache-control', 'no-store'],
+          ]),
+        });
+      }
+      const bodyText = `${lines.join('\n')}\n`;
+      body =
+        outputType === 'plain'
+          ? bodyText
+          : `${Buffer.from(lines.join('\n'), 'utf8').toString('base64')}\n`;
+      contentType = 'text/plain; charset=utf-8';
     }
 
-    const bodyText = `${lines.join('\n')}\n`;
-    const body = wantPlain
-      ? bodyText
-      : `${Buffer.from(lines.join('\n'), 'utf8').toString('base64')}\n`;
-
-    const headers = new Headers([['content-type', 'text/plain; charset=utf-8']]);
+    const headers = new Headers([['content-type', contentType]]);
     noStoreHeaders(headers);
     return new Response(body, { status: 200, headers });
   } catch (e: unknown) {
