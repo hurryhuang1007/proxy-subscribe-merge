@@ -5,6 +5,7 @@ import yaml from 'js-yaml';
 
 import type { ProfileEntry, SubscriptionPoolEntry } from '@/lib/config';
 import { shareLinkToClashProxy, type ClashProxy } from '@/lib/clash';
+import { mergeClashRules } from '@/lib/clash-rules';
 import { mergeDynamicProxyGroups } from '@/lib/clash-region-groups';
 import { mergeShareLinksForSource, type WarnLogger } from '@/lib/subscribe';
 
@@ -20,6 +21,27 @@ async function loadClashTemplate() {
     templateCache = yaml.load(raw) as Record<string, unknown>;
   }
   return templateCache;
+}
+
+const BUILTIN_RULE_POLICIES = ['DIRECT', 'REJECT', 'PASS'] as const;
+
+/** 从 Clash 模板 proxy-groups 提取规则可选策略组，并附加 DIRECT / REJECT / PASS */
+export async function getRulePolicyOptions(): Promise<string[]> {
+  const template = await loadClashTemplate();
+  const rawGroups = template['proxy-groups'];
+  const names: string[] = [];
+  if (Array.isArray(rawGroups)) {
+    for (const item of rawGroups) {
+      if (!item || typeof item !== 'object') continue;
+      const name = String((item as Record<string, unknown>).name ?? '').trim();
+      if (name) names.push(name);
+    }
+  }
+  const seen = new Set(names);
+  for (const p of BUILTIN_RULE_POLICIES) {
+    if (!seen.has(p)) names.push(p);
+  }
+  return names;
 }
 
 export type ClashProxyProvider = {
@@ -114,6 +136,7 @@ export async function buildClashProfileYaml(
   profile: ProfileEntry,
   pool: Map<string, SubscriptionPoolEntry>,
   relay: SubRelayAuth,
+  extraRules: string[] = [],
 ): Promise<string> {
   const proxyProviders = buildProxyProviders(profile.sources, pool, relay);
   if (Object.keys(proxyProviders).length === 0) {
@@ -130,6 +153,7 @@ export async function buildClashProfileYaml(
     ...template,
     'proxy-groups': proxyGroups,
     'proxy-providers': proxyProviders,
+    rules: mergeClashRules(template.rules, extraRules),
   };
   return yaml.dump(config, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: false });
 }

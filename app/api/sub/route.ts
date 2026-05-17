@@ -55,6 +55,9 @@ export async function GET(req: Request) {
   if (!profile) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
+  if (profile.disabled) {
+    return Response.json({ error: 'profile_disabled' }, { status: 403 });
+  }
 
   const cfg = await loadConfig();
   const relay = { subBaseUrl: subBaseUrlFromRequest(url), token: tokenStr };
@@ -94,7 +97,7 @@ export async function GET(req: Request) {
       }
       let yaml: string;
       try {
-        yaml = await buildClashProfileYaml(profile, cfg.subscriptionPool, relay);
+        yaml = await buildClashProfileYaml(profile, cfg.subscriptionPool, relay, cfg.extraRules);
       } catch (e: unknown) {
         if (e instanceof Error && e.message.includes('ENOENT')) {
           return Response.json({ error: 'clash_template_missing' }, { status: 500 });

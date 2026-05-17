@@ -14,18 +14,23 @@ export type ProfileEntryRaw = {
   sources: string[];
   /** 可选展示名，便于在控制台区分客户；不影响 /sub?token 鉴权 */
   name?: string;
+  /** 禁用后 /sub 拒绝拉取 */
+  disabled?: boolean;
 };
 
 export type ProfileEntry = {
   token: string;
   sources: string[];
   name: string;
+  disabled: boolean;
 };
 
 export type AppConfigRaw = {
   adminPassword?: string;
   subscriptionPool: Record<string, SubscriptionPoolEntryRaw>;
   profiles: ProfileEntryRaw[];
+  /** Clash 额外分流规则，生成配置时插入模板 rules 最前面（最高优先级） */
+  extraRules?: string[];
 };
 
 export type SubscriptionPoolEntry = {
@@ -39,6 +44,7 @@ let cachedConfig: {
   mtimeMs: number;
   byToken: Map<string, ProfileEntry>;
   subscriptionPool: Map<string, SubscriptionPoolEntry>;
+  extraRules: string[];
   adminPassword: string;
   rawData: AppConfigRaw;
 } | null = null;
@@ -100,9 +106,36 @@ function parseProfiles(data: unknown, pool: Map<string, SubscriptionPoolEntry>):
       }
       sources.push(sourceName);
     }
-    byToken.set(token, { token, sources, name });
+    const disabledRaw = (src as ProfileEntryRaw).disabled;
+    const disabled = disabledRaw == null ? false : Boolean(disabledRaw);
+    byToken.set(token, { token, sources, name, disabled });
   }
   return byToken;
+}
+
+function parseExtraRules(data: unknown): string[] {
+  const raw = (data as AppConfigRaw)?.extraRules;
+  if (raw == null) {
+    return [];
+  }
+  if (!Array.isArray(raw)) {
+    throw new Error('config: "extraRules" must be an array of strings');
+  }
+  const out: string[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    if (typeof raw[i] !== 'string') {
+      throw new Error(`config: extraRules[${i}] must be a string`);
+    }
+    const line = raw[i].trim();
+    if (!line) {
+      continue;
+    }
+    if (!line.includes(',')) {
+      throw new Error(`config: extraRules[${i}] must be a Clash rule (TYPE,...)`);
+    }
+    out.push(line);
+  }
+  return out;
 }
 
 function parseAdminPassword(data: AppConfigRaw): string {
@@ -118,8 +151,9 @@ function parseAdminPassword(data: AppConfigRaw): string {
 export function parseConfigData(data: AppConfigRaw) {
   const subscriptionPool = parseSubscriptionPool(data);
   const byToken = parseProfiles(data, subscriptionPool);
+  const extraRules = parseExtraRules(data);
   const adminPassword = parseAdminPassword(data);
-  return { byToken, subscriptionPool, adminPassword, rawData: data };
+  return { byToken, subscriptionPool, extraRules, adminPassword, rawData: data };
 }
 
 export async function loadConfig() {
@@ -147,13 +181,18 @@ export async function getProfileByToken(token: string) {
   return cachedConfig.byToken.get(token.trim()) ?? null;
 }
 
-export async function saveConfigPartial(partial: { subscriptionPool: AppConfigRaw['subscriptionPool']; profiles: ProfileEntryRaw[] }) {
+export async function saveConfigPartial(partial: {
+  subscriptionPool: AppConfigRaw['subscriptionPool'];
+  profiles: ProfileEntryRaw[];
+  extraRules: string[];
+}) {
   const CONFIG_PATH = getConfigPath();
   const existing = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as AppConfigRaw;
   const next: AppConfigRaw = {
     ...existing,
     subscriptionPool: partial.subscriptionPool,
     profiles: partial.profiles,
+    extraRules: partial.extraRules,
   };
   parseConfigData(next);
   await writeFile(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
@@ -175,12 +214,15 @@ export async function updateAdminPassword(newPassword: string) {
   cachedConfig = { mtimeMs: st.mtimeMs, ...parseConfigData(next) };
 }
 
-export async function getAdminSafePayload(): Promise<Omit<AppConfigRaw, 'adminPassword'> & { adminPasswordConfigured: boolean }> {
+export async function getAdminSafePayload(): Promise<
+  Omit<AppConfigRaw, 'adminPassword'> & { adminPasswordConfigured: boolean; extraRules: string[] }
+> {
   const c = await loadConfig();
   const { subscriptionPool, profiles } = c.rawData;
   return {
     subscriptionPool,
     profiles,
+    extraRules: c.extraRules,
     adminPasswordConfigured: c.adminPassword.length > 0,
   };
 }

@@ -30,17 +30,31 @@ import {
   Modal,
   Switch,
 } from 'animal-island-ui';
+import {
+  buildExtraRuleLine,
+  CLASH_RULE_TYPES,
+  parseExtraRuleLine,
+  type ExtraRuleParts,
+} from '@/lib/extra-rule-line';
+import { buildProfileSubUrl, type ProfileSubFormat } from '@/lib/sub-url';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 
 type PoolRecord = Record<string, { url: string; disabled: boolean; userAgent: string }>;
-type ProfileRow = { token: string; sources: string[]; name?: string };
+type ProfileRow = { token: string; sources: string[]; name?: string; disabled?: boolean };
 
 type ApiConfig = {
   subscriptionPool: PoolRecord;
   profiles: ProfileRow[];
+  extraRules: string[];
+  policyOptions: string[];
   adminPasswordConfigured: boolean;
 };
+
+function defaultRulePolicy(options: string[]): string {
+  if (options.includes('🎯 总模式')) return '🎯 总模式';
+  return options[0] ?? 'DIRECT';
+}
 
 function sortedPoolKeys(pool: PoolRecord): string[] {
   return Object.keys(pool).sort((a, b) => a.localeCompare(b));
@@ -86,6 +100,56 @@ const modalFormLabelStyle: CSSProperties = {
 };
 
 const modalFormSectionStyle: CSSProperties = { marginTop: 18 };
+
+const ruleLinePreviewStyle: CSSProperties = {
+  marginTop: 8,
+  padding: '8px 10px',
+  borderRadius: 10,
+  fontSize: 12,
+  lineHeight: 1.45,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  wordBreak: 'break-all',
+  background: 'var(--admin-sort-row-bg)',
+  border: '1px dashed var(--admin-sort-row-border)',
+};
+
+const poolInlineTextareaStyle: CSSProperties = {
+  display: 'block',
+  width: '100%',
+  minHeight: 140,
+  marginBottom: 12,
+  padding: '10px 12px',
+  fontSize: 13,
+  lineHeight: 1.5,
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  borderRadius: 12,
+  border: '1px solid var(--admin-sort-row-border)',
+  background: 'var(--admin-sort-row-bg)',
+  color: 'inherit',
+  resize: 'vertical',
+  boxSizing: 'border-box',
+};
+
+type PoolUrlMode = 'subscribe' | 'inline';
+
+function inferPoolUrlMode(url: string): PoolUrlMode {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return 'subscribe';
+  }
+  if (/^https?:\/\//i.test(trimmed) && !/\r|\n/.test(url)) {
+    return 'subscribe';
+  }
+  return 'inline';
+}
+
+function normalizeInlinePoolUrl(raw: string): string {
+  return raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+}
 
 const TOKEN_RANDOM_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
@@ -163,6 +227,44 @@ function SortableProfileSourceRow({ id, onRemove }: { id: string; onRemove: () =
   );
 }
 
+function ExtraRuleCard({
+  line,
+  onEdit,
+  onRemove,
+}: {
+  line: string;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <Card type="dashed" style={{ marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 13,
+              lineHeight: 1.45,
+              wordBreak: 'break-all',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              opacity: 0.92,
+            }}
+          >
+            {line}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={onEdit}>
+            修改
+          </Button>
+          <Button danger type="primary" size="small" style={poolRowPillButtonStyle} onClick={onRemove}>
+            删除
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function ProfileDraftSourcesSortable({
   sources,
   setSources,
@@ -213,6 +315,8 @@ export default function AdminConfigShell() {
   const [saving, setSaving] = useState(false);
   const [pool, setPool] = useState<PoolRecord>({});
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
+  const [extraRules, setExtraRules] = useState<string[]>([]);
+  const [policyOptions, setPolicyOptions] = useState<string[]>([]);
   const [adminPwdOk, setAdminPwdOk] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
@@ -225,6 +329,7 @@ export default function AdminConfigShell() {
   const [poolModalOriginalKey, setPoolModalOriginalKey] = useState<string | null>(null);
   const [poolDraftName, setPoolDraftName] = useState('');
   const [poolDraftUrl, setPoolDraftUrl] = useState('');
+  const [poolDraftUrlMode, setPoolDraftUrlMode] = useState<PoolUrlMode>('subscribe');
   const [poolDraftUa, setPoolDraftUa] = useState('');
   const [poolDraftDisabled, setPoolDraftDisabled] = useState(false);
 
@@ -233,9 +338,20 @@ export default function AdminConfigShell() {
   const [profileDraftName, setProfileDraftName] = useState('');
   const [profileDraftToken, setProfileDraftToken] = useState('');
   const [profileDraftSources, setProfileDraftSources] = useState<string[]>([]);
+  const [profileDraftDisabled, setProfileDraftDisabled] = useState(false);
+
+  const [profileCopyIndex, setProfileCopyIndex] = useState<number | null>(null);
 
   const [pendingDeletePool, setPendingDeletePool] = useState<string | null>(null);
   const [pendingDeleteProfile, setPendingDeleteProfile] = useState<number | null>(null);
+
+  const [ruleModalOpen, setRuleModalOpen] = useState(false);
+  const [ruleDraftIndex, setRuleDraftIndex] = useState<number | null>(null);
+  const [ruleDraftType, setRuleDraftType] = useState<string>(CLASH_RULE_TYPES[0]);
+  const [ruleDraftMatcher, setRuleDraftMatcher] = useState('');
+  const [ruleDraftPolicy, setRuleDraftPolicy] = useState('');
+  const [ruleDraftExtra, setRuleDraftExtra] = useState('');
+  const [pendingDeleteRule, setPendingDeleteRule] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -248,9 +364,12 @@ export default function AdminConfigShell() {
         router.refresh();
         return;
       }
-      setAdminPwdOk(Boolean((data as ApiConfig).adminPasswordConfigured));
-      setPool({ ...(data as ApiConfig).subscriptionPool });
-      setProfiles([...(data as ApiConfig).profiles]);
+      const cfg = data as ApiConfig;
+      setAdminPwdOk(Boolean(cfg.adminPasswordConfigured));
+      setPool({ ...cfg.subscriptionPool });
+      setProfiles([...cfg.profiles]);
+      setExtraRules(Array.isArray(cfg.extraRules) ? cfg.extraRules : []);
+      setPolicyOptions(Array.isArray(cfg.policyOptions) ? cfg.policyOptions : []);
     } catch {
       setNotice({ tone: 'err', text: '加载配置失败' });
     } finally {
@@ -268,7 +387,8 @@ export default function AdminConfigShell() {
     router.refresh();
   }
 
-  async function persistAll(poolNext: PoolRecord, profilesNext: ProfileRow[]) {
+  async function persistAll(poolNext: PoolRecord, profilesNext: ProfileRow[], extraRulesNext?: string[]) {
+    const rules = extraRulesNext ?? extraRules;
     setSaving(true);
     setNotice(null);
     try {
@@ -278,6 +398,7 @@ export default function AdminConfigShell() {
         body: JSON.stringify({
           subscriptionPool: poolNext,
           profiles: profilesNext,
+          extraRules: rules,
         }),
       });
       if (!res.ok) {
@@ -290,6 +411,7 @@ export default function AdminConfigShell() {
       }
       setPool(poolNext);
       setProfiles(profilesNext);
+      setExtraRules(rules);
       setNotice({ tone: 'ok', text: '已保存到磁盘' });
       return true;
     } finally {
@@ -297,10 +419,78 @@ export default function AdminConfigShell() {
     }
   }
 
+  const ruleDraftPreview = buildExtraRuleLine({
+    type: ruleDraftType,
+    matcher: ruleDraftMatcher,
+    policy: ruleDraftPolicy,
+    extra: ruleDraftExtra,
+  });
+
+  function resetRuleDraft(parts?: ExtraRuleParts) {
+    const p = parts ?? { type: CLASH_RULE_TYPES[0], matcher: '', policy: '', extra: '' };
+    setRuleDraftType(p.type || CLASH_RULE_TYPES[0]);
+    setRuleDraftMatcher(p.matcher);
+    setRuleDraftPolicy(p.policy || defaultRulePolicy(policyOptions));
+    setRuleDraftExtra(p.extra ?? '');
+  }
+
+  function openRuleAdd() {
+    setRuleDraftIndex(null);
+    resetRuleDraft();
+    setRuleModalOpen(true);
+  }
+
+  function openRuleEdit(index: number) {
+    const line = extraRules[index];
+    if (!line) {
+      return;
+    }
+    const parsed = parseExtraRuleLine(line);
+    setRuleDraftIndex(index);
+    resetRuleDraft(parsed ?? { type: CLASH_RULE_TYPES[0], matcher: line, policy: '', extra: '' });
+    setRuleModalOpen(true);
+  }
+
+  async function confirmRuleModal() {
+    const line = buildExtraRuleLine({
+      type: ruleDraftType,
+      matcher: ruleDraftMatcher,
+      policy: ruleDraftPolicy,
+      extra: ruleDraftExtra,
+    });
+    if (!line) {
+      setNotice({
+        tone: 'err',
+        text:
+          ruleDraftType.toUpperCase() === 'MATCH'
+            ? 'MATCH 规则需填写策略组名称。'
+            : '请填写规则类型、匹配内容与策略组。',
+      });
+      return;
+    }
+    const next = extraRules.slice();
+    if (ruleDraftIndex == null) {
+      next.push(line);
+    } else {
+      next.splice(ruleDraftIndex, 1, line);
+    }
+    const ok = await persistAll(pool, profiles, next);
+    if (ok) {
+      setRuleModalOpen(false);
+    }
+  }
+
+  async function deleteRuleConfirmed(index: number) {
+    const next = extraRules.filter((_, i) => i !== index);
+    await persistAll(pool, profiles, next);
+    setPendingDeleteRule(null);
+  }
+
   function openPoolAdd() {
     setPoolModalOriginalKey(null);
     setPoolDraftName('');
     setPoolDraftUrl('');
+    setPoolDraftUrlMode('subscribe');
     setPoolDraftUa('');
     setPoolDraftDisabled(false);
     setPoolModalOpen(true);
@@ -311,9 +501,18 @@ export default function AdminConfigShell() {
     setPoolModalOriginalKey(key);
     setPoolDraftName(key);
     setPoolDraftUrl(row.url);
+    setPoolDraftUrlMode(inferPoolUrlMode(row.url));
     setPoolDraftUa(row.userAgent ?? '');
     setPoolDraftDisabled(row.disabled ?? false);
     setPoolModalOpen(true);
+  }
+
+  function switchPoolUrlMode(mode: PoolUrlMode) {
+    setPoolDraftUrlMode(mode);
+    if (mode === 'subscribe') {
+      const firstLine = poolDraftUrl.split(/\r?\n/).map((l) => l.trim()).find(Boolean) ?? '';
+      setPoolDraftUrl(firstLine.replace(/\r|\n/g, ''));
+    }
   }
 
   function migratePoolRename(oldKey: string, newKey: string, nextProfiles: ProfileRow[]): ProfileRow[] {
@@ -325,11 +524,33 @@ export default function AdminConfigShell() {
 
   async function confirmPoolModal() {
     const nameTrim = poolDraftName.trim();
-    const urlTrim = poolDraftUrl.trim();
     const uaTrim = poolDraftUa.trim();
 
-    if (!nameTrim || !urlTrim) {
-      setNotice({ tone: 'err', text: '链接池条目需要填写「名称」和「订阅地址」。' });
+    let urlToSave: string;
+    if (poolDraftUrlMode === 'subscribe') {
+      if (/\r|\n/.test(poolDraftUrl)) {
+        setNotice({ tone: 'err', text: '订阅链接只能填写一行，请切换到「内联 URI」。' });
+        return;
+      }
+      urlToSave = poolDraftUrl.trim();
+      if (!urlToSave) {
+        setNotice({ tone: 'err', text: '请填写订阅链接。' });
+        return;
+      }
+      if (!/^https?:\/\//i.test(urlToSave)) {
+        setNotice({ tone: 'err', text: '订阅链接需以 http:// 或 https:// 开头。' });
+        return;
+      }
+    } else {
+      urlToSave = normalizeInlinePoolUrl(poolDraftUrl);
+      if (!urlToSave) {
+        setNotice({ tone: 'err', text: '请至少填写一行内联 URI。' });
+        return;
+      }
+    }
+
+    if (!nameTrim) {
+      setNotice({ tone: 'err', text: '链接池条目需要填写「名称」。' });
       return;
     }
 
@@ -350,10 +571,10 @@ export default function AdminConfigShell() {
         return;
       }
       delete nextPool[originalKey];
-      nextPool[nameTrim] = { ...copied, url: urlTrim, userAgent: uaTrim, disabled: poolDraftDisabled };
+      nextPool[nameTrim] = { ...copied, url: urlToSave, userAgent: uaTrim, disabled: poolDraftDisabled };
       profilesAfterMigrate = migratePoolRename(originalKey, nameTrim, nextProfiles);
     } else if (originalKey !== null && originalKey === nameTrim) {
-      nextPool[nameTrim] = { url: urlTrim, disabled: poolDraftDisabled, userAgent: uaTrim };
+      nextPool[nameTrim] = { url: urlToSave, disabled: poolDraftDisabled, userAgent: uaTrim };
       profilesAfterMigrate = nextProfiles;
     } else {
       if (nextPool[nameTrim]) {
@@ -361,7 +582,7 @@ export default function AdminConfigShell() {
         return;
       }
       nextPool[nameTrim] = {
-        url: urlTrim,
+        url: urlToSave,
         disabled: poolDraftDisabled,
         userAgent: uaTrim,
       };
@@ -394,12 +615,14 @@ export default function AdminConfigShell() {
       setProfileDraftName('');
       setProfileDraftToken('');
       setProfileDraftSources([]);
+      setProfileDraftDisabled(false);
     } else {
       const row = profiles[index];
       setProfileDraftIndex(index);
       setProfileDraftName(row.name?.trim() ?? '');
       setProfileDraftToken(row.token);
       setProfileDraftSources([...row.sources]);
+      setProfileDraftDisabled(row.disabled ?? false);
     }
     setProfileModalOpen(true);
   }
@@ -430,6 +653,7 @@ export default function AdminConfigShell() {
     const rowDef: ProfileRow = {
       token: tokenTrim,
       sources: ordered,
+      disabled: profileDraftDisabled,
       ...(nameTrim ? { name: nameTrim } : {}),
     };
     if (profileDraftIndex == null) {
@@ -488,6 +712,30 @@ export default function AdminConfigShell() {
       [key]: { ...pool[key], disabled },
     };
     await persistAll(nextPool, profiles);
+  }
+
+  async function persistProfileDisabled(index: number, disabled: boolean) {
+    const nextProfiles = profiles.slice();
+    const row = nextProfiles[index];
+    if (!row) {
+      return;
+    }
+    nextProfiles[index] = { ...row, disabled };
+    await persistAll(pool, nextProfiles);
+  }
+
+  async function copyProfileSubLink(token: string, format: ProfileSubFormat) {
+    const url = buildProfileSubUrl(window.location.origin, token, format);
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice({
+        tone: 'ok',
+        text: format === 'clash' ? '已复制 Clash 订阅链接' : '已复制普通订阅链接',
+      });
+      setProfileCopyIndex(null);
+    } catch {
+      setNotice({ tone: 'err', text: '复制失败，请检查浏览器剪贴板权限' });
+    }
   }
 
   return (
@@ -585,8 +833,8 @@ export default function AdminConfigShell() {
                   </div>
                   {profiles.map((row, idx) => (
                     <Card key={`${row.token}-${idx}`} type="dashed" style={{ marginBottom: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                        <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                           {row.name ? (
                             <>
                               <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{row.name}</div>
@@ -596,12 +844,24 @@ export default function AdminConfigShell() {
                             <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>{row.token}</div>
                           )}
                           <div style={{ marginTop: 6, opacity: 0.92 }}>{row.sources.join(' → ')}</div>
+                          {row.disabled ? (
+                            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>已禁用，/sub 不可拉取</div>
+                          ) : null}
                         </div>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <Button type="dashed" onClick={() => openProfile(false, idx)}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+                          <Switch
+                            checked={!(row.disabled ?? false)}
+                            checkedChildren="启用"
+                            unCheckedChildren="禁用"
+                            onChange={(enabled) => void persistProfileDisabled(idx, !enabled)}
+                          />
+                          <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={() => setProfileCopyIndex(idx)}>
+                            复制订阅
+                          </Button>
+                          <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={() => openProfile(false, idx)}>
                             编辑
                           </Button>
-                          <Button danger type="primary" onClick={() => setPendingDeleteProfile(idx)}>
+                          <Button danger type="primary" size="small" style={poolRowPillButtonStyle} onClick={() => setPendingDeleteProfile(idx)}>
                             删除
                           </Button>
                         </div>
@@ -611,6 +871,35 @@ export default function AdminConfigShell() {
                   {profiles.length === 0 ? (
                     <Card color="brown">暂时没有客户条目，可先配置链接池，再在此处绑定。</Card>
                   ) : null}
+                </div>
+              ),
+            },
+            {
+              key: 'rules',
+              label: 'clash额外规则',
+              children: (
+                <div>
+                  <div style={{ marginBottom: 16 }}>
+                    <Button type="primary" onClick={openRuleAdd}>
+                      新建额外规则
+                    </Button>
+                  </div>
+                  <Card color="warm-peach-pink" style={{ marginBottom: 16, fontSize: 13, lineHeight: 1.55 }}>
+                    按列表顺序依次匹配，排列在前的规则优先级更高。生成 Clash 配置时，这些规则会插入所有模板 rules 的最前面。策略组名称需与模板一致，例如 🎯
+                    总模式、🇨🇳 国内网站。
+                  </Card>
+                  {extraRules.length > 0 ? (
+                    extraRules.map((line, idx) => (
+                      <ExtraRuleCard
+                        key={`${idx}-${line}`}
+                        line={line}
+                        onEdit={() => openRuleEdit(idx)}
+                        onRemove={() => setPendingDeleteRule(idx)}
+                      />
+                    ))
+                  ) : (
+                    <Card color="brown">还没有额外规则，点击「新建额外规则」添加。</Card>
+                  )}
                 </div>
               ),
             },
@@ -664,6 +953,81 @@ export default function AdminConfigShell() {
 
         <Modal
           typewriter={false}
+          open={ruleModalOpen}
+          className="admin-animal-modal"
+          title={ruleDraftIndex == null ? '新建额外规则' : `编辑额外规则 · #${ruleDraftIndex + 1}`}
+          width={640}
+          onClose={() => setRuleModalOpen(false)}
+          footer={
+            <>
+              <Button onClick={() => setRuleModalOpen(false)} type="default">
+                取消
+              </Button>
+              <Button type="primary" loading={saving} onClick={() => void confirmRuleModal()}>
+                {saving ? '保存中…' : '保存'}
+              </Button>
+            </>
+          }
+        >
+          <label style={modalFormLabelStyle}>规则类型</label>
+          <select
+            className="admin-modal-select"
+            value={ruleDraftType}
+            onChange={(e) => setRuleDraftType(e.target.value)}
+          >
+            {CLASH_RULE_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          {ruleDraftType.toUpperCase() !== 'MATCH' ? (
+            <>
+              <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>匹配内容</label>
+              <Input
+                allowClear
+                style={{ marginBottom: 12 }}
+                placeholder="例如 example.com 或 10.0.0.0/8"
+                value={ruleDraftMatcher}
+                onChange={(e) => setRuleDraftMatcher(e.target.value)}
+              />
+            </>
+          ) : null}
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>
+            {ruleDraftType.toUpperCase() === 'MATCH' ? '兜底策略组' : '策略组 / 动作'}
+          </label>
+          <select
+            className="admin-modal-select"
+            value={ruleDraftPolicy}
+            onChange={(e) => setRuleDraftPolicy(e.target.value)}
+          >
+            {ruleDraftPolicy && !policyOptions.includes(ruleDraftPolicy) ? (
+              <option value={ruleDraftPolicy}>{ruleDraftPolicy}（当前值）</option>
+            ) : null}
+            {policyOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          {ruleDraftType.toUpperCase() !== 'MATCH' ? (
+            <>
+              <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>附加参数（可选）</label>
+              <Input
+                allowClear
+                style={{ marginBottom: 12 }}
+                placeholder="例如 no-resolve"
+                value={ruleDraftExtra}
+                onChange={(e) => setRuleDraftExtra(e.target.value)}
+              />
+            </>
+          ) : null}
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>规则预览</label>
+          <div style={ruleLinePreviewStyle}>{ruleDraftPreview || '填写上方字段后将自动生成 Clash 规则行'}</div>
+        </Modal>
+
+        <Modal
+          typewriter={false}
           open={poolModalOpen}
           className="admin-animal-modal"
           title={poolModalOriginalKey ? `编辑链接池 · ${poolModalOriginalKey}` : '新建链接池'}
@@ -682,14 +1046,50 @@ export default function AdminConfigShell() {
         >
           <label style={modalFormLabelStyle}>名称（键）</label>
           <Input allowClear style={{ marginBottom: 12 }} value={poolDraftName} onChange={(e) => setPoolDraftName(e.target.value)} />
-          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>订阅地址（或内联 URI）</label>
-          <Input
-            allowClear
-            style={{ marginBottom: 12 }}
-            placeholder="https://..."
-            value={poolDraftUrl}
-            onChange={(e) => setPoolDraftUrl(e.target.value)}
-          />
+          <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>地址类型</label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Button
+              type={poolDraftUrlMode === 'subscribe' ? 'primary' : 'dashed'}
+              size="small"
+              style={poolRowPillButtonStyle}
+              onClick={() => switchPoolUrlMode('subscribe')}
+            >
+              订阅链接
+            </Button>
+            <Button
+              type={poolDraftUrlMode === 'inline' ? 'primary' : 'dashed'}
+              size="small"
+              style={poolRowPillButtonStyle}
+              onClick={() => switchPoolUrlMode('inline')}
+            >
+              内联 URI
+            </Button>
+          </div>
+          <label style={modalFormLabelStyle}>
+            {poolDraftUrlMode === 'subscribe' ? '订阅地址（单行）' : '内联 URI（每行一个节点链接）'}
+          </label>
+          {poolDraftUrlMode === 'subscribe' ? (
+            <Input
+              allowClear
+              style={{ marginBottom: 12 }}
+              placeholder="https://..."
+              value={poolDraftUrl}
+              onChange={(e) => setPoolDraftUrl(e.target.value.replace(/\r?\n/g, ''))}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData('text').replace(/\r?\n/g, '');
+                e.preventDefault();
+                setPoolDraftUrl(text);
+              }}
+            />
+          ) : (
+            <textarea
+              value={poolDraftUrl}
+              onChange={(e) => setPoolDraftUrl(e.target.value)}
+              placeholder={'vless://...\nvmess://...\nss://...'}
+              spellCheck={false}
+              style={poolInlineTextareaStyle}
+            />
+          )}
           <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>User-Agent（可留空）</label>
           <Input allowClear style={{ marginBottom: 12 }} value={poolDraftUa} onChange={(e) => setPoolDraftUa(e.target.value)} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...modalFormSectionStyle }}>
@@ -750,6 +1150,15 @@ export default function AdminConfigShell() {
               </Button>
             }
           />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, ...modalFormSectionStyle }}>
+            <span style={{ fontWeight: 600, fontSize: 13 }}>启用此客户</span>
+            <Switch
+              checked={!profileDraftDisabled}
+              checkedChildren="启用"
+              unCheckedChildren="禁用"
+              onChange={(enabled) => setProfileDraftDisabled(!enabled)}
+            />
+          </div>
           <label style={{ ...modalFormLabelStyle, ...modalFormSectionStyle }}>
             订阅合并顺序（拖动标签区域排序，「移除」不受影响）
           </label>
@@ -789,6 +1198,56 @@ export default function AdminConfigShell() {
 
         <Modal
           typewriter={false}
+          open={profileCopyIndex != null}
+          className="admin-animal-modal"
+          title="复制订阅链接"
+          width={560}
+          onClose={() => setProfileCopyIndex(null)}
+          footer={
+            <Button type="default" onClick={() => setProfileCopyIndex(null)}>
+              关闭
+            </Button>
+          }
+        >
+          {profileCopyIndex != null && profiles[profileCopyIndex] ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, opacity: 0.92 }}>
+                普通订阅为 Base64 合并节点链接；Clash 订阅为完整配置文件（type=clash）。
+              </p>
+              <div>
+                <div style={{ ...modalFormLabelStyle, marginBottom: 4 }}>普通订阅</div>
+                <div style={ruleLinePreviewStyle}>
+                  {buildProfileSubUrl(window.location.origin, profiles[profileCopyIndex]!.token, 'default')}
+                </div>
+                <Button
+                  type="primary"
+                  size="small"
+                  style={{ ...poolRowPillButtonStyle, marginTop: 8 }}
+                  onClick={() => void copyProfileSubLink(profiles[profileCopyIndex]!.token, 'default')}
+                >
+                  复制普通订阅
+                </Button>
+              </div>
+              <div>
+                <div style={{ ...modalFormLabelStyle, marginBottom: 4 }}>Clash 订阅</div>
+                <div style={ruleLinePreviewStyle}>
+                  {buildProfileSubUrl(window.location.origin, profiles[profileCopyIndex]!.token, 'clash')}
+                </div>
+                <Button
+                  type="dashed"
+                  size="small"
+                  style={{ ...poolRowPillButtonStyle, marginTop: 8 }}
+                  onClick={() => void copyProfileSubLink(profiles[profileCopyIndex]!.token, 'clash')}
+                >
+                  复制 Clash 订阅
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
+
+        <Modal
+          typewriter={false}
           open={Boolean(pendingDeletePool)}
           className="admin-animal-modal"
           title="删除链接池条目？"
@@ -815,6 +1274,36 @@ export default function AdminConfigShell() {
           onClose={() => setPendingDeletePool(null)}
         >
           所有客户配置中引用到这个名称的记录都会被移除。<div style={{ marginTop: 14 }}>{pendingDeletePool}</div>
+        </Modal>
+
+        <Modal
+          typewriter={false}
+          open={pendingDeleteRule != null}
+          className="admin-animal-modal"
+          title="删除这条额外规则？"
+          footer={
+            <>
+              <Button type="default" onClick={() => setPendingDeleteRule(null)}>
+                取消
+              </Button>
+              <Button
+                danger
+                type="primary"
+                onClick={() => pendingDeleteRule != null && void deleteRuleConfirmed(pendingDeleteRule)}
+              >
+                确认删除
+              </Button>
+            </>
+          }
+          onClose={() => setPendingDeleteRule(null)}
+        >
+          {pendingDeleteRule != null ? (
+            <div style={{ wordBreak: 'break-all', fontFamily: 'ui-monospace, monospace', fontSize: 13 }}>
+              {extraRules[pendingDeleteRule]}
+            </div>
+          ) : (
+            '—'
+          )}
         </Modal>
 
         <Modal
