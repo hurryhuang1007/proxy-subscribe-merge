@@ -5,6 +5,7 @@ import yaml from 'js-yaml';
 
 import type { ProfileEntry, SubscriptionPoolEntry } from '@/lib/config';
 import { shareLinkToClashProxy, type ClashProxy } from '@/lib/clash';
+import { applyHttpRuleProviders } from '@/lib/clash-rule-providers';
 import { mergeClashRules } from '@/lib/clash-rules';
 import { mergeDynamicProxyGroups } from '@/lib/clash-region-groups';
 import { mergeShareLinksForSource, type WarnLogger } from '@/lib/subscribe';
@@ -153,6 +154,9 @@ export async function buildClashProfileYaml(
     ...template,
     'proxy-groups': proxyGroups,
     'proxy-providers': proxyProviders,
+    'rule-providers': applyHttpRuleProviders(
+      template['rule-providers'] as Record<string, Record<string, unknown>> | undefined,
+    ),
     rules: mergeClashRules(template.rules, extraRules),
   };
   return yaml.dump(config, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: false });

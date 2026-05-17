@@ -1,0 +1,7 @@
+payload:
+  # Taiwan streaming / media (not covered by other TW-specific rule-providers)
+  - DOMAIN-SUFFIX,4gtv.tv
+  - DOMAIN-SUFFIX,ofiii.com
+  - DOMAIN-SUFFIX,friday.tw
+  - DOMAIN-SUFFIX,catchplay.com
+  - DOMAIN-SUFFIX,hamivideo.hinet.net
