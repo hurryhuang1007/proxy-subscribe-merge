@@ -1,4 +1,4 @@
-import { loadConfig, getProfileByToken } from '@/lib/config';
+import { loadConfig, getProfileByToken, type ProfileEntry } from '@/lib/config';
 import { isClashClientUserAgent } from '@/lib/clash';
 import {
   buildClashProfileYaml,
@@ -35,6 +35,21 @@ function readOutputType(url: URL, req: Request): OutputType {
 function noStoreHeaders(h: Headers) {
   h.set('cache-control', 'no-store, no-cache, must-revalidate');
   h.set('pragma', 'no-cache');
+}
+
+function isExplicitClashType(url: URL) {
+  return url.searchParams.get('type')?.trim().toLowerCase() === 'clash';
+}
+
+function clashDownloadFilename(profile: ProfileEntry) {
+  const base = profile.name.trim() || 'clash';
+  const safe = base.replace(/[^\w\u4e00-\u9fff.-]+/gu, '_').replace(/_+/g, '_').slice(0, 64) || 'clash';
+  return `${safe}.yaml`;
+}
+
+function attachmentDisposition(filename: string) {
+  const ascii = filename.replace(/[^\x20-\x7E]/g, '_') || 'clash.yaml';
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 export async function GET(req: Request) {
@@ -133,6 +148,9 @@ export async function GET(req: Request) {
 
     const headers = new Headers([['content-type', contentType]]);
     noStoreHeaders(headers);
+    if (outputType === 'clash' && isExplicitClashType(url)) {
+      headers.set('content-disposition', attachmentDisposition(clashDownloadFilename(profile)));
+    }
     return new Response(body, { status: 200, headers });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'unknown_error';
