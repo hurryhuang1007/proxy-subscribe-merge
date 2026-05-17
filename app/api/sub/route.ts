@@ -1,5 +1,4 @@
 import { loadConfig, getProfileByToken } from '@/lib/config';
-import { isClashClientUserAgent } from '@/lib/clash';
 import {
   buildClashProfileYaml,
   buildClashProxiesYamlForSource,
@@ -23,11 +22,10 @@ function readPlain(url: URL) {
 
 type OutputType = 'clash' | 'proxies' | 'plain' | 'default';
 
-function readOutputType(url: URL, req: Request): OutputType {
+function readOutputType(url: URL): OutputType {
   const type = url.searchParams.get('type')?.trim().toLowerCase();
   if (type === 'proxies') return 'proxies';
   if (type === 'clash') return 'clash';
-  if (isClashClientUserAgent(req.headers.get('user-agent')) && !readSource(url)) return 'clash';
   if (readPlain(url)) return 'plain';
   return 'default';
 }
@@ -40,7 +38,7 @@ function noStoreHeaders(h: Headers) {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const tokenStr = readToken(url);
-  const outputType = readOutputType(url, req);
+  const outputType = readOutputType(url);
   const sourceName = readSource(url);
 
   let profile;

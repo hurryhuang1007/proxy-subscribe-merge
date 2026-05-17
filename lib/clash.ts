@@ -329,11 +329,3 @@ export function shareLinksToClashYaml(links: string[]): string {
   // proxy-providers (http) 仅需 proxies 段，规则/策略组由主配置维护
   return yaml.dump({ proxies }, { lineWidth: -1, noRefs: true, quotingType: '"', forceQuotes: false });
 }
-
-const CLASH_UA_RE = /clash|mihomo|stash|surfboard/i;
-
-/** 识别 Clash/Mihomo 等拉取 proxy-provider 时的 User-Agent */
-export function isClashClientUserAgent(ua: string | null) {
-  if (!ua) return false;
-  return CLASH_UA_RE.test(ua);
-}
