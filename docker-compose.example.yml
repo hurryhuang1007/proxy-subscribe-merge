@@ -26,5 +26,6 @@ services:
       CONFIG_PATH: "/config/config.json"
       SESSION_SECRET: "请替换为至少32位随机字符串_abcdefghijklmnop"
       SESSION_COOKIE_SECURE: "false" # HTTP 部署建议 false；HTTPS 可设为 true
+      # PUBLIC_SUB_BASE_URL: "http://your-host:8787/sub" # 公网/客户端可访问的订阅基址
     volumes:
       - ./config.json:/config/config.json

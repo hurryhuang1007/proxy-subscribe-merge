@@ -31,7 +31,7 @@
 
    编辑 `config.json`：填写 `subscriptionPool` 中各源的 `url`、`profiles` 里每个用户的 `token` 与 `sources`；按需设置 `adminPassword`（也可仅用环境变量 `ADMIN_PASSWORD`，见 `.env.example` 注释）。
 
-   编辑 `.env`：将 `SESSION_SECRET` 改为**至少 32 位**随机字符串；可按需调整 `CONFIG_PATH`（默认项目根目录下的 `./config.json`）。
+   编辑 `.env`：将 `SESSION_SECRET` 改为**至少 32 位**随机字符串；可按需调整 `CONFIG_PATH`（默认项目根目录下的 `./config.json`）。若经反向代理或 Docker 对外暴露的域名/端口与容器内请求 Host 不一致，请设置 `PUBLIC_SUB_BASE_URL`（如 `https://你的域名/sub`），否则 Clash 配置里 `proxy-providers` 的拉取地址可能错误。
 
 3. 启动开发服务：
 
@@ -80,6 +80,7 @@ pnpm start
 | `profiles` | 每个用户一条；`sources` 为池中名称列表，按顺序拉取并去重合并 |
 | `SESSION_SECRET` | 会话加密，生产环境必须更换 |
 | `SESSION_COOKIE_SECURE` | Docker 示例中 HTTP 部署常用 `false`；全站 HTTPS 时可设为 `true` |
+| `PUBLIC_SUB_BASE_URL` | 对外 `/sub` 基址；未设置时用当前请求的 `origin`。反向代理 / Docker 下建议填写公网地址，以修正 `proxy-providers` 内转接 URL |
 
 更细的字段说明见 `config.example.json` 与 `docker-compose.example.yml` 内注释。
 

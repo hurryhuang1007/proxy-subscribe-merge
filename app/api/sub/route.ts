@@ -5,6 +5,7 @@ import {
   buildClashProxiesYamlForSource,
   profileHasEnabledSources,
 } from '@/lib/clash-profile';
+import { resolveSubBaseUrl } from '@/lib/public-sub-base-url';
 import { mergeShareLinksForProfile } from '@/lib/subscribe';
 
 function readToken(url: URL) {
@@ -36,10 +37,6 @@ function noStoreHeaders(h: Headers) {
   h.set('pragma', 'no-cache');
 }
 
-function subBaseUrlFromRequest(url: URL) {
-  return `${url.origin}/sub`;
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const tokenStr = readToken(url);
@@ -60,7 +57,7 @@ export async function GET(req: Request) {
   }
 
   const cfg = await loadConfig();
-  const relay = { subBaseUrl: subBaseUrlFromRequest(url), token: tokenStr };
+  const relay = { subBaseUrl: resolveSubBaseUrl(url), token: tokenStr };
 
   try {
     let body: string;
