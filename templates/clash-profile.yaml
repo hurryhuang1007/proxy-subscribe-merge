@@ -10,15 +10,22 @@ dns:
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
   use-hosts: true
-  nameserver: [system, 'https://223.5.5.5/dns-query', 'https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query']
+  nameserver: ['https://223.5.5.5/dns-query', 'https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query']
   proxy-server-nameserver: ['https://223.5.5.5/dns-query', 'https://doh.pub/dns-query']
   fallback: ['https://doh.dns.sb/dns-query', 'https://dns.cloudflare.com/dns-query', 'https://dns.twnic.tw/dns-query', 'tls://8.8.4.4:853']
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+    ipcidr:
+      - 240.0.0.0/4
+profile:
+  store-selected: true
+  store-fake-ip: true
 proxy-groups:
   - name: 🎯 总模式
     type: select
     proxies:
       - Ⓜ️ 延迟最低
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
       - DIRECT
@@ -33,12 +40,6 @@ proxy-groups:
     url: http://www.gstatic.com/generate_204
     interval: 300
     include-all: true
-  - name: Ⓜ️ 负载均衡
-    type: load-balance
-    strategy: consistent-hashing
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    include-all: true
   - name: ♻️ 手动切换
     type: select
     include-all: true
@@ -49,17 +50,13 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
-      - Ⓜ️ 故障切换
-      - ♻️ 手动切换
       - DIRECT
   - name: 🍎 苹果服务
     type: select
     proxies:
       - DIRECT
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -68,7 +65,6 @@ proxy-groups:
     proxies:
       - DIRECT
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -76,7 +72,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -85,7 +80,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -94,7 +88,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -103,7 +96,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -112,7 +104,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -121,7 +112,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -130,7 +120,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -139,7 +128,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -148,7 +136,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -157,7 +144,6 @@ proxy-groups:
     type: select
     proxies:
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -167,7 +153,6 @@ proxy-groups:
     proxies:
       - DIRECT
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换
@@ -176,7 +161,6 @@ proxy-groups:
     proxies:
       - DIRECT
       - 🎯 总模式
-      - Ⓜ️ 负载均衡
       - Ⓜ️ 延迟最低
       - Ⓜ️ 故障切换
       - ♻️ 手动切换

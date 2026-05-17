@@ -18,10 +18,9 @@ function appendSupplierModeGroups(
 ) {
   const delay = `${sourceName} 延迟最低`;
   const fallback = `${sourceName} 故障切换`;
-  const balance = `${sourceName} 负载均衡`;
   const manual = `${sourceName} 手动切换`;
 
-  modePickerNames.push(delay, fallback, balance, manual);
+  modePickerNames.push(delay, fallback, manual);
   groups.push({
     name: delay,
     type: 'url-test',
@@ -31,12 +30,6 @@ function appendSupplierModeGroups(
   groups.push({
     name: fallback,
     type: 'fallback',
-    ...probe,
-  });
-  groups.push({
-    name: balance,
-    type: 'load-balance',
-    strategy: 'consistent-hashing',
     ...probe,
   });
   groups.push({
@@ -69,7 +62,6 @@ export function legacySupplierGroupNames(sources: string[]) {
     names.add(`📦 ${sourceName}`);
     names.add(`${sourceName} 延迟最低`);
     names.add(`${sourceName} 故障切换`);
-    names.add(`${sourceName} 负载均衡`);
     names.add(`${sourceName} 手动切换`);
   }
   return names;

@@ -3,11 +3,16 @@ import { buildSupplierProxyGroups, legacySupplierGroupNames } from '@/lib/clash-
 
 const PROBE_URL = 'http://www.gstatic.com/generate_204';
 
-const CORE_POLICY = ['Ⓜ️ 延迟最低', 'Ⓜ️ 负载均衡', 'Ⓜ️ 故障切换', '♻️ 手动切换'];
+/** 排除名称中含 Cloudflare 服务商的节点 */
+const EXCLUDE_CLOUDFLARE = '(?i)cloudflare';
+
+const MODE_SELECTOR = '🎯 总模式';
+
+const CORE_POLICY = ['Ⓜ️ 延迟最低', 'Ⓜ️ 故障切换', '♻️ 手动切换'];
+
+const DNS_POLICY_GROUP = '📬 国外dns';
 
 const POLICY_SELECT_GROUPS = new Set([
-  '🎯 总模式',
-  '📬 国外dns',
   '📲 聊天软件',
   '🤖 OpenAI',
   '📹 YouTube',
@@ -30,42 +35,68 @@ type RegionDef = {
 
 const REGIONS: RegionDef[] = [
   { prefix: '🇭🇰', label: '香港', filter: '(?i)(港|hk|hong[\\s+]+kong|hkg|香港)' },
-  { prefix: '🇹🇼', label: '台湾', filter: '(?i)(台|tw|taiwan|台北|高雄|台湾)' },
   { prefix: '🇯🇵', label: '日本', filter: '(?i)(日|jp|japan|东京|大阪|日本)' },
-  { prefix: '🇰🇷', label: '韩国', filter: '(?i)(韩|kr|korea|首尔|韩国)' },
-  { prefix: '🇺🇸', label: '美国', filter: '(?i)(美|us|usa|united[\\s+]+states|洛杉矶|纽约|西雅图|美国)' },
   {
     prefix: '🇸🇬',
     label: '新加坡',
     filter: '(?i)(新加坡|狮城|singapore|(?:^|[\\s|｜\\-\\[\\]#:,])sg(?:$|[\\s|｜\\-\\[\\]#:,]))',
   },
-  { prefix: '🇬🇧', label: '英国', filter: '(?i)(英|uk|britain|united[\\s+]+kingdom|london|伦敦|英国)' },
-  { prefix: '🇩🇪', label: '德国', filter: '(?i)(德|de|germany|法兰克福|德国)' },
-  { prefix: '🇫🇷', label: '法国', filter: '(?i)(法|fr|france|巴黎|法国)' },
-  { prefix: '🇦🇺', label: '澳大利亚', filter: '(?i)(澳|au|australia|悉尼|墨尔本|澳大利亚)' },
-  {
-    prefix: '🇨🇦',
-    label: '加拿大',
-    filter: '(?i)(加拿大|canada|多伦多|温哥华|蒙特利尔|渥太华|卡尔加里|(?:^|[\\s|｜\\-\\[\\]#:,])ca(?:$|[\\s|｜\\-\\[\\]#:,]))',
-  },
-  { prefix: '🇮🇳', label: '印度', filter: '(?i)(印|india|孟买|印度)' },
-  { prefix: '🌐', label: '其他地区' },
+  { prefix: '🇺🇸', label: '美国', filter: '(?i)(美|us|usa|united[\\s+]+states|洛杉矶|纽约|西雅图|美国)' },
 ];
 
 const REGION_PARENT_NAMES = new Set(REGIONS.map((r) => `${r.prefix} ${r.label}`));
+
+/** 历史地区组（已从 REGIONS 移除，合并时需清理） */
+const LEGACY_REGION_PARENT_NAMES = new Set([
+  '🇹🇼 台湾',
+  '🇰🇷 韩国',
+  '🇬🇧 英国',
+  '🇩🇪 德国',
+  '🇫🇷 法国',
+  '🇦🇺 澳大利亚',
+  '🇨🇦 加拿大',
+  '🇮🇳 印度',
+  '🌐 其他地区',
+]);
+
+const LEGACY_REGION_PREFIXES = [
+  '🇭🇰',
+  '🇹🇼',
+  '🇯🇵',
+  '🇰🇷',
+  '🇺🇸',
+  '🇸🇬',
+  '🇬🇧',
+  '🇩🇪',
+  '🇫🇷',
+  '🇦🇺',
+  '🇨🇦',
+  '🇮🇳',
+  '🌐',
+];
 
 function filteredProbeOpts(filter?: string) {
   return {
     url: PROBE_URL,
     interval: 300,
     'include-all': true,
+    'exclude-filter': EXCLUDE_CLOUDFLARE,
     ...(filter ? { filter } : {}),
   };
 }
 
+function buildMainModeProxies(dynamicPickers: string[]) {
+  return [...CORE_POLICY, ...dynamicPickers, 'DIRECT'];
+}
+
 function buildPolicyProxies(dynamicPickers: string[], directFirst: boolean) {
-  const scoped = [...CORE_POLICY, ...dynamicPickers];
+  const scoped = [MODE_SELECTOR, ...CORE_POLICY, ...dynamicPickers];
   return directFirst ? ['DIRECT', ...scoped] : [...scoped, 'DIRECT'];
+}
+
+function buildDnsProxies(dynamicPickers: string[]) {
+  const delayPickers = dynamicPickers.filter((n) => n.endsWith(' 延迟最低'));
+  return [MODE_SELECTOR, 'Ⓜ️ 延迟最低', ...delayPickers, 'DIRECT'];
 }
 
 export function buildRegionProxyGroups() {
@@ -75,11 +106,10 @@ export function buildRegionProxyGroups() {
   for (const { prefix, filter } of REGIONS) {
     const delay = `${prefix} 延迟最低`;
     const fallback = `${prefix} 故障切换`;
-    const balance = `${prefix} 负载均衡`;
     const manual = `${prefix} 手动切换`;
     const probe = filteredProbeOpts(filter);
 
-    modePickerNames.push(delay, fallback, balance, manual);
+    modePickerNames.push(delay, fallback, manual);
     groups.push({
       name: delay,
       type: 'url-test',
@@ -89,12 +119,6 @@ export function buildRegionProxyGroups() {
     groups.push({
       name: fallback,
       type: 'fallback',
-      ...probe,
-    });
-    groups.push({
-      name: balance,
-      type: 'load-balance',
-      strategy: 'consistent-hashing',
       ...probe,
     });
     groups.push({
@@ -108,15 +132,18 @@ export function buildRegionProxyGroups() {
 }
 
 function isLegacyRegionGroup(name: string) {
-  if (REGION_PARENT_NAMES.has(name) || name === '🌏 节点地区' || name === '📦 节点供应商') {
+  if (
+    REGION_PARENT_NAMES.has(name) ||
+    LEGACY_REGION_PARENT_NAMES.has(name) ||
+    name === '🌏 节点地区' ||
+    name === '📦 节点供应商'
+  ) {
     return true;
   }
-  return REGIONS.some((r) => {
-    const p = r.prefix;
+  return LEGACY_REGION_PREFIXES.some((p) => {
     return (
       name === `${p} 延迟最低` ||
       name === `${p} 故障切换` ||
-      name === `${p} 负载均衡` ||
       name === `${p} 手动切换`
     );
   });
@@ -144,6 +171,14 @@ export function mergeDynamicProxyGroups(
     if (name === '🌏 节点地区' || name === '📦 节点供应商') continue;
     if (isLegacyRegionGroup(name) || legacySuppliers.has(name)) continue;
 
+    if (name === MODE_SELECTOR) {
+      out.push({ ...g, proxies: buildMainModeProxies(dynamicPickers) });
+      continue;
+    }
+    if (name === DNS_POLICY_GROUP) {
+      out.push({ ...g, proxies: buildDnsProxies(dynamicPickers) });
+      continue;
+    }
     if (POLICY_SELECT_GROUPS.has(name)) {
       out.push({ ...g, proxies: buildPolicyProxies(dynamicPickers, false) });
       continue;
