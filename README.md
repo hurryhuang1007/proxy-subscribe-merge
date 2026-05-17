@@ -82,3 +82,13 @@ pnpm start
 | `SESSION_COOKIE_SECURE` | Docker 示例中 HTTP 部署常用 `false`；全站 HTTPS 时可设为 `true` |
 
 更细的字段说明见 `config.example.json` 与 `docker-compose.example.yml` 内注释。
+
+## 使用声明
+
+本项目仅用于个人学习、研究与非商业展示，禁止任何形式的商业使用、二次售卖或盈利行为。
+
+不用于任何商业产品、企业项目、对外服务或付费模板。
+
+如有问题或版权相关沟通，请通过 Issue 或邮件联系。
+
+本项目基于 MIT 开源协议发布，仅限学习使用，作者不对因使用本库导致的任何法律问题或损失承担责任。
