@@ -1,6 +1,7 @@
 'use client';
 
 import { ThemeToggle } from '@/app/components/ThemeToggle';
+import { copyTextToClipboard } from '@/lib/copy-text';
 import '@/app/config/admin-animal-modal.css';
 import { IslandTabs } from '@/app/config/IslandTabs';
 import {
@@ -727,7 +728,7 @@ export default function AdminConfigShell() {
   async function copyProfileSubLink(token: string, format: ProfileSubFormat) {
     const url = buildProfileSubUrl(window.location.origin, token, format);
     try {
-      await navigator.clipboard.writeText(url);
+      await copyTextToClipboard(url);
       setNotice({
         tone: 'ok',
         text: format === 'clash' ? '已复制 Clash 订阅链接' : '已复制普通订阅链接',
