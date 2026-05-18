@@ -25,6 +25,14 @@ export type ProfileEntry = {
   disabled: boolean;
 };
 
+/** 配置文件中单条额外规则：字符串为启用；对象可标记 disabled */
+export type ExtraRuleEntryRaw = string | { line: string; disabled?: boolean };
+
+export type ExtraRuleEntry = {
+  line: string;
+  disabled: boolean;
+};
+
 export type AppConfigRaw = {
   adminPassword?: string;
   /** 递增后会使旧 JWT 失效（改密时自动 +1） */
@@ -32,7 +40,7 @@ export type AppConfigRaw = {
   subscriptionPool: Record<string, SubscriptionPoolEntryRaw>;
   profiles: ProfileEntryRaw[];
   /** Clash 额外分流规则，生成配置时插入模板 rules 最前面（最高优先级） */
-  extraRules?: string[];
+  extraRules?: ExtraRuleEntryRaw[];
 };
 
 export type SubscriptionPoolEntry = {
@@ -46,7 +54,7 @@ let cachedConfig: {
   mtimeMs: number;
   byToken: Map<string, ProfileEntry>;
   subscriptionPool: Map<string, SubscriptionPoolEntry>;
-  extraRules: string[];
+  extraRules: ExtraRuleEntry[];
   adminPassword: string;
   adminSessionVersion: number;
   rawData: AppConfigRaw;
@@ -116,29 +124,54 @@ function parseProfiles(data: unknown, pool: Map<string, SubscriptionPoolEntry>):
   return byToken;
 }
 
-function parseExtraRules(data: unknown): string[] {
+function validateExtraRuleLine(line: string, index: number): string {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    throw new Error(`config: extraRules[${index}] line must be non-empty`);
+  }
+  if (!trimmed.includes(',')) {
+    throw new Error(`config: extraRules[${index}] must be a Clash rule (TYPE,...)`);
+  }
+  return trimmed;
+}
+
+function parseExtraRules(data: unknown): ExtraRuleEntry[] {
   const raw = (data as AppConfigRaw)?.extraRules;
   if (raw == null) {
     return [];
   }
   if (!Array.isArray(raw)) {
-    throw new Error('config: "extraRules" must be an array of strings');
+    throw new Error('config: "extraRules" must be an array');
   }
-  const out: string[] = [];
+  const out: ExtraRuleEntry[] = [];
   for (let i = 0; i < raw.length; i++) {
-    if (typeof raw[i] !== 'string') {
-      throw new Error(`config: extraRules[${i}] must be a string`);
-    }
-    const line = raw[i].trim();
-    if (!line) {
+    const item = raw[i];
+    if (typeof item === 'string') {
+      const line = validateExtraRuleLine(item, i);
+      out.push({ line, disabled: false });
       continue;
     }
-    if (!line.includes(',')) {
-      throw new Error(`config: extraRules[${i}] must be a Clash rule (TYPE,...)`);
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`config: extraRules[${i}] must be a string or { line, disabled? }`);
     }
-    out.push(line);
+    const lineRaw = (item as { line?: unknown }).line;
+    if (typeof lineRaw !== 'string') {
+      throw new Error(`config: extraRules[${i}].line must be a string`);
+    }
+    const line = validateExtraRuleLine(lineRaw, i);
+    const disabledRaw = (item as { disabled?: unknown }).disabled;
+    const disabled = disabledRaw == null ? false : Boolean(disabledRaw);
+    out.push({ line, disabled });
   }
   return out;
+}
+
+export function serializeExtraRulesForDisk(entries: ExtraRuleEntry[]): ExtraRuleEntryRaw[] {
+  return entries.map((e) => (e.disabled ? { line: e.line, disabled: true } : e.line));
+}
+
+export function enabledExtraRuleLines(entries: ExtraRuleEntry[]): string[] {
+  return entries.filter((e) => !e.disabled).map((e) => e.line);
 }
 
 function parseAdminPassword(data: AppConfigRaw): string {
@@ -199,15 +232,16 @@ export async function getProfileByToken(token: string) {
 export async function saveConfigPartial(partial: {
   subscriptionPool: AppConfigRaw['subscriptionPool'];
   profiles: ProfileEntryRaw[];
-  extraRules: string[];
+  extraRules: ExtraRuleEntryRaw[];
 }) {
   const CONFIG_PATH = getConfigPath();
   const existing = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as AppConfigRaw;
+  const parsedExtraRules = parseExtraRules({ extraRules: partial.extraRules });
   const next: AppConfigRaw = {
     ...existing,
     subscriptionPool: partial.subscriptionPool,
     profiles: partial.profiles,
-    extraRules: partial.extraRules,
+    extraRules: serializeExtraRulesForDisk(parsedExtraRules),
   };
   parseConfigData(next);
   await writeFile(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
@@ -235,7 +269,7 @@ export async function updateAdminPassword(newPassword: string) {
 }
 
 export async function getAdminSafePayload(): Promise<
-  Omit<AppConfigRaw, 'adminPassword'> & { adminPasswordConfigured: boolean; extraRules: string[] }
+  Omit<AppConfigRaw, 'adminPassword'> & { adminPasswordConfigured: boolean; extraRules: ExtraRuleEntry[] }
 > {
   const c = await loadConfig();
   const { subscriptionPool, profiles } = c.rawData;

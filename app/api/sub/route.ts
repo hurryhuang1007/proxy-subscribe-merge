@@ -1,4 +1,4 @@
-import { loadConfig, getProfileByToken } from '@/lib/config';
+import { enabledExtraRuleLines, loadConfig, getProfileByToken } from '@/lib/config';
 import {
   buildClashProfileYaml,
   buildClashProxiesYamlForSource,
@@ -92,7 +92,7 @@ export async function GET(req: Request) {
       }
       let yaml: string;
       try {
-        yaml = await buildClashProfileYaml(profile, cfg.subscriptionPool, relay, cfg.extraRules);
+        yaml = await buildClashProfileYaml(profile, cfg.subscriptionPool, relay, enabledExtraRuleLines(cfg.extraRules));
       } catch (e: unknown) {
         if (e instanceof Error && e.message.includes('ENOENT')) {
           return Response.json({ error: 'clash_template_missing' }, { status: 500 });

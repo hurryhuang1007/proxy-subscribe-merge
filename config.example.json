@@ -18,7 +18,8 @@
     }
   },
   "extraRules": [
-    "DOMAIN-SUFFIX,example.com,🎯 总模式"
+    "DOMAIN-SUFFIX,example.com,🎯 总模式",
+    { "line": "DOMAIN,disabled.example.com,DIRECT", "disabled": true }
   ],
   "profiles": [
     {

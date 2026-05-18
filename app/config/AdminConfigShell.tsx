@@ -37,6 +37,7 @@ import {
   parseExtraRuleLine,
   type ExtraRuleParts,
 } from '@/lib/extra-rule-line';
+import { type ExtraRuleEntry } from '@/lib/config';
 import { buildProfileSubUrl, type ProfileSubFormat } from '@/lib/sub-url';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
@@ -47,7 +48,7 @@ type ProfileRow = { token: string; sources: string[]; name?: string; disabled?: 
 type ApiConfig = {
   subscriptionPool: PoolRecord;
   profiles: ProfileRow[];
-  extraRules: string[];
+  extraRules: ExtraRuleEntry[];
   policyOptions: string[];
   adminPasswordConfigured: boolean;
 };
@@ -230,12 +231,16 @@ function SortableProfileSourceRow({ id, onRemove }: { id: string; onRemove: () =
 
 function ExtraRuleCard({
   line,
+  disabled,
   onEdit,
   onRemove,
+  onToggleDisabled,
 }: {
   line: string;
+  disabled: boolean;
   onEdit: () => void;
   onRemove: () => void;
+  onToggleDisabled: (disabled: boolean) => void;
 }) {
   return (
     <Card type="dashed" style={{ marginBottom: 12 }}>
@@ -247,13 +252,22 @@ function ExtraRuleCard({
               lineHeight: 1.45,
               wordBreak: 'break-all',
               fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              opacity: 0.92,
+              opacity: disabled ? 0.55 : 0.92,
             }}
           >
             {line}
           </div>
+          {disabled ? (
+            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>已禁用，生成 Clash 配置时不插入此规则</div>
+          ) : null}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <Switch
+            checked={!disabled}
+            checkedChildren="启用"
+            unCheckedChildren="禁用"
+            onChange={(enabled) => onToggleDisabled(!enabled)}
+          />
           <Button type="dashed" size="small" style={poolRowPillButtonStyle} onClick={onEdit}>
             修改
           </Button>
@@ -316,7 +330,7 @@ export default function AdminConfigShell() {
   const [saving, setSaving] = useState(false);
   const [pool, setPool] = useState<PoolRecord>({});
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
-  const [extraRules, setExtraRules] = useState<string[]>([]);
+  const [extraRules, setExtraRules] = useState<ExtraRuleEntry[]>([]);
   const [policyOptions, setPolicyOptions] = useState<string[]>([]);
   const [adminPwdOk, setAdminPwdOk] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
@@ -388,7 +402,7 @@ export default function AdminConfigShell() {
     router.refresh();
   }
 
-  async function persistAll(poolNext: PoolRecord, profilesNext: ProfileRow[], extraRulesNext?: string[]) {
+  async function persistAll(poolNext: PoolRecord, profilesNext: ProfileRow[], extraRulesNext?: ExtraRuleEntry[]) {
     const rules = extraRulesNext ?? extraRules;
     setSaving(true);
     setNotice(null);
@@ -442,13 +456,13 @@ export default function AdminConfigShell() {
   }
 
   function openRuleEdit(index: number) {
-    const line = extraRules[index];
-    if (!line) {
+    const row = extraRules[index];
+    if (!row) {
       return;
     }
-    const parsed = parseExtraRuleLine(line);
+    const parsed = parseExtraRuleLine(row.line);
     setRuleDraftIndex(index);
-    resetRuleDraft(parsed ?? { type: CLASH_RULE_TYPES[0], matcher: line, policy: '', extra: '' });
+    resetRuleDraft(parsed ?? { type: CLASH_RULE_TYPES[0], matcher: row.line, policy: '', extra: '' });
     setRuleModalOpen(true);
   }
 
@@ -471,9 +485,10 @@ export default function AdminConfigShell() {
     }
     const next = extraRules.slice();
     if (ruleDraftIndex == null) {
-      next.push(line);
+      next.push({ line, disabled: false });
     } else {
-      next.splice(ruleDraftIndex, 1, line);
+      const prev = extraRules[ruleDraftIndex];
+      next.splice(ruleDraftIndex, 1, { line, disabled: prev?.disabled ?? false });
     }
     const ok = await persistAll(pool, profiles, next);
     if (ok) {
@@ -725,6 +740,16 @@ export default function AdminConfigShell() {
     await persistAll(pool, nextProfiles);
   }
 
+  async function persistRuleDisabled(index: number, disabled: boolean) {
+    const next = extraRules.slice();
+    const row = next[index];
+    if (!row) {
+      return;
+    }
+    next[index] = { ...row, disabled };
+    await persistAll(pool, profiles, next);
+  }
+
   async function copyProfileSubLink(token: string, format: ProfileSubFormat) {
     const url = buildProfileSubUrl(window.location.origin, token, format);
     try {
@@ -890,12 +915,14 @@ export default function AdminConfigShell() {
                     总模式、🇨🇳 国内网站。
                   </Card>
                   {extraRules.length > 0 ? (
-                    extraRules.map((line, idx) => (
+                    extraRules.map((row, idx) => (
                       <ExtraRuleCard
-                        key={`${idx}-${line}`}
-                        line={line}
+                        key={`${idx}-${row.line}`}
+                        line={row.line}
+                        disabled={row.disabled}
                         onEdit={() => openRuleEdit(idx)}
                         onRemove={() => setPendingDeleteRule(idx)}
+                        onToggleDisabled={(disabled) => void persistRuleDisabled(idx, disabled)}
                       />
                     ))
                   ) : (
@@ -1300,7 +1327,7 @@ export default function AdminConfigShell() {
         >
           {pendingDeleteRule != null ? (
             <div style={{ wordBreak: 'break-all', fontFamily: 'ui-monospace, monospace', fontSize: 13 }}>
-              {extraRules[pendingDeleteRule]}
+              {extraRules[pendingDeleteRule]?.line}
             </div>
           ) : (
             '—'
