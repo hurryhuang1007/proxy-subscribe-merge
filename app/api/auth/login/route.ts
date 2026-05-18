@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 
 import { loadConfig } from '@/lib/config';
+import { checkLoginRateLimit, getClientIp } from '@/lib/login-rate-limit';
 import { createAdminJwt, setAdminAuthCookie } from '@/lib/session';
 
 export async function POST(req: Request) {
   try {
+    const rate = checkLoginRateLimit(getClientIp(req));
+    if (!rate.ok) {
+      return NextResponse.json(
+        { error: 'rate_limited', retryAfterSec: rate.retryAfterSec },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfterSec) } },
+      );
+    }
+
     const body = await req.json();
     const password = typeof body?.password === 'string' ? body.password : '';
 

@@ -27,6 +27,8 @@ export type ProfileEntry = {
 
 export type AppConfigRaw = {
   adminPassword?: string;
+  /** 递增后会使旧 JWT 失效（改密时自动 +1） */
+  adminSessionVersion?: number;
   subscriptionPool: Record<string, SubscriptionPoolEntryRaw>;
   profiles: ProfileEntryRaw[];
   /** Clash 额外分流规则，生成配置时插入模板 rules 最前面（最高优先级） */
@@ -46,6 +48,7 @@ let cachedConfig: {
   subscriptionPool: Map<string, SubscriptionPoolEntry>;
   extraRules: string[];
   adminPassword: string;
+  adminSessionVersion: number;
   rawData: AppConfigRaw;
 } | null = null;
 
@@ -148,12 +151,24 @@ function parseAdminPassword(data: AppConfigRaw): string {
   return '';
 }
 
+function parseAdminSessionVersion(data: AppConfigRaw): number {
+  const v = data?.adminSessionVersion;
+  if (v == null) {
+    return 0;
+  }
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+    throw new Error('config: "adminSessionVersion" must be a non-negative integer');
+  }
+  return v;
+}
+
 export function parseConfigData(data: AppConfigRaw) {
   const subscriptionPool = parseSubscriptionPool(data);
   const byToken = parseProfiles(data, subscriptionPool);
   const extraRules = parseExtraRules(data);
   const adminPassword = parseAdminPassword(data);
-  return { byToken, subscriptionPool, extraRules, adminPassword, rawData: data };
+  const adminSessionVersion = parseAdminSessionVersion(data);
+  return { byToken, subscriptionPool, extraRules, adminPassword, adminSessionVersion, rawData: data };
 }
 
 export async function loadConfig() {
@@ -207,7 +222,12 @@ export async function updateAdminPassword(newPassword: string) {
     throw new Error('new password must not be empty');
   }
   const existing = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as AppConfigRaw;
-  const next: AppConfigRaw = { ...existing, adminPassword: trimmed };
+  const prevVersion = parseAdminSessionVersion(existing);
+  const next: AppConfigRaw = {
+    ...existing,
+    adminPassword: trimmed,
+    adminSessionVersion: prevVersion + 1,
+  };
   parseConfigData(next);
   await writeFile(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   const st = await stat(CONFIG_PATH);

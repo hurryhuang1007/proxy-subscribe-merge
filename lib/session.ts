@@ -1,6 +1,8 @@
 import * as jose from 'jose';
 import { cookies } from 'next/headers';
 
+import { loadConfig } from '@/lib/config';
+
 export const ADMIN_COOKIE = 'proxy_subscribe_merge_admin';
 
 function getSecureCookieFlag(): boolean {
@@ -25,8 +27,9 @@ function getJwtSecretRaw(): Uint8Array {
 }
 
 export async function createAdminJwt(): Promise<string> {
+  const cfg = await loadConfig();
   const key = getJwtSecretRaw();
-  return new jose.SignJWT({ admin: true })
+  return new jose.SignJWT({ admin: true, sv: cfg.adminSessionVersion })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
@@ -38,9 +41,13 @@ export async function verifyAdminJwt(token: string | undefined): Promise<boolean
     return false;
   }
   try {
-    const key = getJwtSecretRaw();
-    const { payload } = await jose.jwtVerify(token, key);
-    return payload.admin === true;
+    const cfg = await loadConfig();
+    const { payload } = await jose.jwtVerify(token, getJwtSecretRaw());
+    if (payload.admin !== true) {
+      return false;
+    }
+    const tokenVersion = typeof payload.sv === 'number' ? payload.sv : 0;
+    return tokenVersion === cfg.adminSessionVersion;
   } catch {
     return false;
   }

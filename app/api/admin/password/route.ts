@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { loadConfig, updateAdminPassword } from '@/lib/config';
-import { isAdminFromCookies } from '@/lib/session';
+import { createAdminJwt, isAdminFromCookies, setAdminAuthCookie } from '@/lib/session';
 
 export async function POST(req: Request) {
   if (!(await isAdminFromCookies())) {
@@ -20,6 +20,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'invalid_current_password' }, { status: 400 });
     }
     await updateAdminPassword(nextPwd);
+    const jwt = await createAdminJwt();
+    await setAdminAuthCookie(jwt);
     return NextResponse.json({ ok: true });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'unknown';

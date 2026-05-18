@@ -31,6 +31,11 @@ export default function LoginClient() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.error === 'rate_limited') {
+          const sec = typeof data.retryAfterSec === 'number' ? data.retryAfterSec : 60;
+          setMessage(`登录尝试过于频繁，请 ${sec} 秒后再试`);
+          return;
+        }
         setMessage(typeof data.message === 'string' ? data.message : '登录失败，请核对管理密码或服务配置');
         return;
       }
