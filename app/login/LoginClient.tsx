@@ -1,6 +1,8 @@
 'use client';
 
 import { ThemeToggle } from '@/app/components/ThemeToggle';
+import { ToastViewport } from '@/app/components/ToastViewport';
+import { useToast } from '@/app/components/useToast';
 import { Button, Card, Cursor, Divider, Footer, Input } from 'animal-island-ui';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -11,7 +13,7 @@ export default function LoginClient() {
   const presetErr = searchParams?.get('err');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
 
   const bannerFromQuery = useMemo(() => {
     if (presetErr === 'session') {
@@ -21,7 +23,6 @@ export default function LoginClient() {
   }, [presetErr]);
 
   async function submit() {
-    setMessage(null);
     setLoading(true);
     try {
       const res = await fetch('/api/auth/login', {
@@ -33,10 +34,10 @@ export default function LoginClient() {
       if (!res.ok) {
         if (data.error === 'rate_limited') {
           const sec = typeof data.retryAfterSec === 'number' ? data.retryAfterSec : 60;
-          setMessage(`登录尝试过于频繁，请 ${sec} 秒后再试`);
+          showToast('err', `登录尝试过于频繁，请 ${sec} 秒后再试`);
           return;
         }
-        setMessage(typeof data.message === 'string' ? data.message : '登录失败，请核对管理密码或服务配置');
+        showToast('err', typeof data.message === 'string' ? data.message : '登录失败，请核对管理密码或服务配置');
         return;
       }
       router.replace('/config');
@@ -48,6 +49,7 @@ export default function LoginClient() {
 
   return (
     <Cursor>
+      <ToastViewport toast={toast} onDismiss={dismissToast} />
       <main
         style={{
           position: 'relative',
@@ -70,11 +72,6 @@ export default function LoginClient() {
           {bannerFromQuery ? (
             <Card color="app-yellow" style={{ marginBottom: 12 }}>
               {bannerFromQuery}
-            </Card>
-          ) : null}
-          {message ? (
-            <Card color="app-pink" style={{ marginBottom: 12 }}>
-              {message}
             </Card>
           ) : null}
           <Divider type="wave-yellow" />

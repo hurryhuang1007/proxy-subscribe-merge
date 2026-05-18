@@ -1,6 +1,8 @@
 'use client';
 
 import { ThemeToggle } from '@/app/components/ThemeToggle';
+import { ToastViewport } from '@/app/components/ToastViewport';
+import { useToast } from '@/app/components/useToast';
 import { copyTextToClipboard } from '@/lib/copy-text';
 import '@/app/config/admin-animal-modal.css';
 import { IslandTabs } from '@/app/config/IslandTabs';
@@ -333,7 +335,7 @@ export default function AdminConfigShell() {
   const [extraRules, setExtraRules] = useState<ExtraRuleEntry[]>([]);
   const [policyOptions, setPolicyOptions] = useState<string[]>([]);
   const [adminPwdOk, setAdminPwdOk] = useState<boolean | null>(null);
-  const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const { toast, showToast, dismissToast } = useToast();
 
   const [pwdCurrent, setPwdCurrent] = useState('');
   const [pwdNew, setPwdNew] = useState('');
@@ -370,7 +372,6 @@ export default function AdminConfigShell() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setNotice(null);
     try {
       const res = await fetch('/api/admin/config', { method: 'GET' });
       const data = (await res.json()) as ApiConfig | { error?: string };
@@ -386,7 +387,7 @@ export default function AdminConfigShell() {
       setExtraRules(Array.isArray(cfg.extraRules) ? cfg.extraRules : []);
       setPolicyOptions(Array.isArray(cfg.policyOptions) ? cfg.policyOptions : []);
     } catch {
-      setNotice({ tone: 'err', text: '加载配置失败' });
+      showToast('err', '加载配置失败');
     } finally {
       setLoading(false);
     }
@@ -405,7 +406,6 @@ export default function AdminConfigShell() {
   async function persistAll(poolNext: PoolRecord, profilesNext: ProfileRow[], extraRulesNext?: ExtraRuleEntry[]) {
     const rules = extraRulesNext ?? extraRules;
     setSaving(true);
-    setNotice(null);
     try {
       const res = await fetch('/api/admin/config', {
         method: 'PUT',
@@ -418,16 +418,13 @@ export default function AdminConfigShell() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        setNotice({
-          tone: 'err',
-          text: typeof err?.message === 'string' ? err.message : '保存失败，请核对校验错误',
-        });
+        showToast('err', typeof err?.message === 'string' ? err.message : '保存失败，请核对校验错误');
         return false;
       }
       setPool(poolNext);
       setProfiles(profilesNext);
       setExtraRules(rules);
-      setNotice({ tone: 'ok', text: '已保存到磁盘' });
+      showToast('ok', '已保存到磁盘');
       return true;
     } finally {
       setSaving(false);
@@ -474,13 +471,12 @@ export default function AdminConfigShell() {
       extra: ruleDraftExtra,
     });
     if (!line) {
-      setNotice({
-        tone: 'err',
-        text:
-          ruleDraftType.toUpperCase() === 'MATCH'
-            ? 'MATCH 规则需填写策略组名称。'
-            : '请填写规则类型、匹配内容与策略组。',
-      });
+      showToast(
+        'err',
+        ruleDraftType.toUpperCase() === 'MATCH'
+          ? 'MATCH 规则需填写策略组名称。'
+          : '请填写规则类型、匹配内容与策略组。',
+      );
       return;
     }
     const next = extraRules.slice();
@@ -545,28 +541,28 @@ export default function AdminConfigShell() {
     let urlToSave: string;
     if (poolDraftUrlMode === 'subscribe') {
       if (/\r|\n/.test(poolDraftUrl)) {
-        setNotice({ tone: 'err', text: '订阅链接只能填写一行，请切换到「内联 URI」。' });
+        showToast('err', '订阅链接只能填写一行，请切换到「内联 URI」。');
         return;
       }
       urlToSave = poolDraftUrl.trim();
       if (!urlToSave) {
-        setNotice({ tone: 'err', text: '请填写订阅链接。' });
+        showToast('err', '请填写订阅链接。');
         return;
       }
       if (!/^https?:\/\//i.test(urlToSave)) {
-        setNotice({ tone: 'err', text: '订阅链接需以 http:// 或 https:// 开头。' });
+        showToast('err', '订阅链接需以 http:// 或 https:// 开头。');
         return;
       }
     } else {
       urlToSave = normalizeInlinePoolUrl(poolDraftUrl);
       if (!urlToSave) {
-        setNotice({ tone: 'err', text: '请至少填写一行内联 URI。' });
+        showToast('err', '请至少填写一行内联 URI。');
         return;
       }
     }
 
     if (!nameTrim) {
-      setNotice({ tone: 'err', text: '链接池条目需要填写「名称」。' });
+      showToast('err', '链接池条目需要填写「名称」。');
       return;
     }
 
@@ -579,7 +575,7 @@ export default function AdminConfigShell() {
 
     if (originalKey !== null && originalKey !== nameTrim) {
       if (nextPool[nameTrim]) {
-        setNotice({ tone: 'err', text: '该链接池名称已存在。' });
+        showToast('err', '该链接池名称已存在。');
         return;
       }
       const copied = nextPool[originalKey];
@@ -594,7 +590,7 @@ export default function AdminConfigShell() {
       profilesAfterMigrate = nextProfiles;
     } else {
       if (nextPool[nameTrim]) {
-        setNotice({ tone: 'err', text: '该链接池名称已存在。' });
+        showToast('err', '该链接池名称已存在。');
         return;
       }
       nextPool[nameTrim] = {
@@ -648,10 +644,7 @@ export default function AdminConfigShell() {
     const keys = sortedPoolKeys(pool);
     const ordered = orderedSourcesForSave(profileDraftSources, keys);
     if (!tokenTrim || ordered.length === 0) {
-      setNotice({
-        tone: 'err',
-        text: '客户配置需要填写「令牌」并至少选择 1 个订阅源（可拖拽调整合并顺序）。',
-      });
+      showToast('err', '客户配置需要填写「令牌」并至少选择 1 个订阅源（可拖拽调整合并顺序）。');
       return;
     }
     let nextProfiles: ProfileRow[];
@@ -661,7 +654,7 @@ export default function AdminConfigShell() {
     );
 
     if (duplicateOthers) {
-      setNotice({ tone: 'err', text: '令牌已存在，不能与另一个客户冲突。' });
+      showToast('err', '令牌已存在，不能与另一个客户冲突。');
       return;
     }
 
@@ -691,10 +684,9 @@ export default function AdminConfigShell() {
 
   async function submitPasswordChange() {
     setPwdBusy(true);
-    setNotice(null);
     try {
       if (!pwdCurrent || !pwdNew || pwdNew !== pwdRepeat) {
-        setNotice({ tone: 'err', text: '请输入当前密码与新密码，并确认两次新密码一致。' });
+        showToast('err', '请输入当前密码与新密码，并确认两次新密码一致。');
         return;
       }
 
@@ -708,14 +700,14 @@ export default function AdminConfigShell() {
       if (!res.ok) {
         const msg =
           typeof data?.message === 'string' ? data.message : '修改失败（请核对当前密码或配置）';
-        setNotice({ tone: 'err', text: msg });
+        showToast('err', msg);
         return;
       }
 
       setPwdCurrent('');
       setPwdNew('');
       setPwdRepeat('');
-      setNotice({ tone: 'ok', text: '管理密码已更新，请改用新密码重新登录更安全。' });
+      showToast('ok', '管理密码已更新，请改用新密码重新登录更安全。');
       void reload();
     } finally {
       setPwdBusy(false);
@@ -754,18 +746,16 @@ export default function AdminConfigShell() {
     const url = buildProfileSubUrl(window.location.origin, token, format);
     try {
       await copyTextToClipboard(url);
-      setNotice({
-        tone: 'ok',
-        text: format === 'clash' ? '已复制 Clash 订阅链接' : '已复制普通订阅链接',
-      });
+      showToast('ok', format === 'clash' ? '已复制 Clash 订阅链接' : '已复制普通订阅链接');
       setProfileCopyIndex(null);
     } catch {
-      setNotice({ tone: 'err', text: '复制失败，请检查浏览器剪贴板权限' });
+      showToast('err', '复制失败，请检查浏览器剪贴板权限');
     }
   }
 
   return (
     <Cursor>
+      <ToastViewport toast={toast} onDismiss={dismissToast} />
       <main style={{ padding: '28px 16px 40px', maxWidth: 1040, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
           <Card type="title" style={{ flex: '1 1 auto' }}>
@@ -778,12 +768,10 @@ export default function AdminConfigShell() {
           <Button onClick={() => void logout()}>退出登录</Button>
         </div>
 
-        <Card color={notice?.tone === 'ok' ? 'app-teal' : notice?.tone === 'err' ? 'app-red' : 'warm-peach-pink'}>
-          {notice
-            ? notice.text
-            : loading
-              ? '正在加载配置……'
-              : '提示：在客户档案中按「合并顺序」拖拽排列链接池；合并时从左到右依次抓取。禁用链接池仍可保留配置但不会参与抓取。'}
+        <Card color="warm-peach-pink">
+          {loading
+            ? '正在加载配置……'
+            : '提示：在客户档案中按「合并顺序」拖拽排列链接池；合并时从左到右依次抓取。禁用链接池仍可保留配置但不会参与抓取。'}
         </Card>
 
         {adminPwdOk === false ? (
