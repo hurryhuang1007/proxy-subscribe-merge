@@ -2,6 +2,12 @@ import { existsSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 
 import { getConfigPath } from '@/lib/config-path';
+import {
+  DEFAULT_SOURCE_PREFETCH_ENABLED,
+  DEFAULT_SOURCE_PREFETCH_INTERVAL_MINUTES,
+  MAX_SOURCE_PREFETCH_INTERVAL_MINUTES,
+  MIN_SOURCE_PREFETCH_INTERVAL_MINUTES,
+} from '@/lib/source-prefetch-constants';
 
 export type SubscriptionPoolEntryRaw = {
   url: string;
@@ -33,6 +39,16 @@ export type ExtraRuleEntry = {
   disabled: boolean;
 };
 
+export type SourcePrefetchRaw = {
+  enabled?: boolean;
+  intervalMinutes?: number;
+};
+
+export type SourcePrefetch = {
+  enabled: boolean;
+  intervalMinutes: number;
+};
+
 export type AppConfigRaw = {
   adminPassword?: string;
   /** 递增后会使旧 JWT 失效（改密时自动 +1） */
@@ -41,6 +57,8 @@ export type AppConfigRaw = {
   profiles: ProfileEntryRaw[];
   /** Clash 额外分流规则，生成配置时插入模板 rules 最前面（最高优先级） */
   extraRules?: ExtraRuleEntryRaw[];
+  /** 是否定时拉取订阅源并缓存到内存；缺省视为开启 */
+  sourcePrefetch?: SourcePrefetchRaw;
 };
 
 export type SubscriptionPoolEntry = {
@@ -57,6 +75,7 @@ let cachedConfig: {
   extraRules: ExtraRuleEntry[];
   adminPassword: string;
   adminSessionVersion: number;
+  sourcePrefetch: SourcePrefetch;
   rawData: AppConfigRaw;
 } | null = null;
 
@@ -195,13 +214,46 @@ function parseAdminSessionVersion(data: AppConfigRaw): number {
   return v;
 }
 
+export function parseSourcePrefetch(data: AppConfigRaw): SourcePrefetch {
+  const raw = data?.sourcePrefetch;
+  if (raw == null) {
+    return {
+      enabled: DEFAULT_SOURCE_PREFETCH_ENABLED,
+      intervalMinutes: DEFAULT_SOURCE_PREFETCH_INTERVAL_MINUTES,
+    };
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('config: "sourcePrefetch" must be an object');
+  }
+  const enabled = raw.enabled == null ? DEFAULT_SOURCE_PREFETCH_ENABLED : Boolean(raw.enabled);
+  const interval = raw.intervalMinutes;
+  if (interval == null) {
+    return { enabled, intervalMinutes: DEFAULT_SOURCE_PREFETCH_INTERVAL_MINUTES };
+  }
+  if (typeof interval !== 'number' || !Number.isInteger(interval)) {
+    throw new Error('config: "sourcePrefetch.intervalMinutes" must be an integer');
+  }
+  if (interval < MIN_SOURCE_PREFETCH_INTERVAL_MINUTES) {
+    throw new Error(
+      `config: "sourcePrefetch.intervalMinutes" must be >= ${MIN_SOURCE_PREFETCH_INTERVAL_MINUTES}`,
+    );
+  }
+  if (interval > MAX_SOURCE_PREFETCH_INTERVAL_MINUTES) {
+    throw new Error(
+      `config: "sourcePrefetch.intervalMinutes" must be <= ${MAX_SOURCE_PREFETCH_INTERVAL_MINUTES}`,
+    );
+  }
+  return { enabled, intervalMinutes: interval };
+}
+
 export function parseConfigData(data: AppConfigRaw) {
   const subscriptionPool = parseSubscriptionPool(data);
   const byToken = parseProfiles(data, subscriptionPool);
   const extraRules = parseExtraRules(data);
   const adminPassword = parseAdminPassword(data);
   const adminSessionVersion = parseAdminSessionVersion(data);
-  return { byToken, subscriptionPool, extraRules, adminPassword, adminSessionVersion, rawData: data };
+  const sourcePrefetch = parseSourcePrefetch(data);
+  return { byToken, subscriptionPool, extraRules, adminPassword, adminSessionVersion, sourcePrefetch, rawData: data };
 }
 
 export async function loadConfig() {
@@ -268,8 +320,28 @@ export async function updateAdminPassword(newPassword: string) {
   cachedConfig = { mtimeMs: st.mtimeMs, ...parseConfigData(next) };
 }
 
+export async function saveSourcePrefetch(prefetch: SourcePrefetch) {
+  const CONFIG_PATH = getConfigPath();
+  const existing = JSON.parse(await readFile(CONFIG_PATH, 'utf8')) as AppConfigRaw;
+  const next: AppConfigRaw = {
+    ...existing,
+    sourcePrefetch: {
+      enabled: prefetch.enabled,
+      intervalMinutes: prefetch.intervalMinutes,
+    },
+  };
+  parseConfigData(next);
+  await writeFile(CONFIG_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  const st = await stat(CONFIG_PATH);
+  cachedConfig = { mtimeMs: st.mtimeMs, ...parseConfigData(next) };
+}
+
 export async function getAdminSafePayload(): Promise<
-  Omit<AppConfigRaw, 'adminPassword'> & { adminPasswordConfigured: boolean; extraRules: ExtraRuleEntry[] }
+  Omit<AppConfigRaw, 'adminPassword'> & {
+    adminPasswordConfigured: boolean;
+    extraRules: ExtraRuleEntry[];
+    sourcePrefetch: SourcePrefetch;
+  }
 > {
   const c = await loadConfig();
   const { subscriptionPool, profiles } = c.rawData;
@@ -277,6 +349,7 @@ export async function getAdminSafePayload(): Promise<
     subscriptionPool,
     profiles,
     extraRules: c.extraRules,
+    sourcePrefetch: c.sourcePrefetch,
     adminPasswordConfigured: c.adminPassword.length > 0,
   };
 }

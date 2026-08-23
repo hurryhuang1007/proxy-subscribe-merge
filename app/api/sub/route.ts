@@ -5,6 +5,7 @@ import {
   profileHasEnabledSources,
 } from '@/lib/clash-profile';
 import { resolveSubBaseUrl } from '@/lib/public-sub-base-url';
+import { ensurePrefetchScheduler } from '@/lib/source-prefetch';
 import { mergeShareLinksForProfile } from '@/lib/subscribe';
 
 function readToken(url: URL) {
@@ -55,6 +56,7 @@ export async function GET(req: Request) {
   }
 
   const cfg = await loadConfig();
+  void ensurePrefetchScheduler();
   const relay = { subBaseUrl: resolveSubBaseUrl(url), token: tokenStr };
 
   try {

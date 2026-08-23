@@ -39,7 +39,12 @@ import {
   parseExtraRuleLine,
   type ExtraRuleParts,
 } from '@/lib/extra-rule-line';
-import { type ExtraRuleEntry } from '@/lib/config';
+import { type ExtraRuleEntry, type SourcePrefetch } from '@/lib/config';
+import type { SourceCacheRowStatus, SourceCacheSnapshot } from '@/lib/source-cache';
+import {
+  DEFAULT_SOURCE_PREFETCH_INTERVAL_MINUTES,
+  MIN_SOURCE_PREFETCH_INTERVAL_MINUTES,
+} from '@/lib/source-prefetch-constants';
 import { buildProfileSubUrl, type ProfileSubFormat } from '@/lib/sub-url';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
@@ -53,7 +58,51 @@ type ApiConfig = {
   extraRules: ExtraRuleEntry[];
   policyOptions: string[];
   adminPasswordConfigured: boolean;
+  sourcePrefetch: SourcePrefetch;
+  sourceCache: SourceCacheSnapshot;
 };
+
+const defaultSourcePrefetch: SourcePrefetch = {
+  enabled: true,
+  intervalMinutes: DEFAULT_SOURCE_PREFETCH_INTERVAL_MINUTES,
+};
+
+function emptySourceCache(prefetch: SourcePrefetch): SourceCacheSnapshot {
+  return {
+    prefetchEnabled: prefetch.enabled,
+    intervalMinutes: prefetch.intervalMinutes,
+    lastRefreshAt: null,
+    refreshing: false,
+    lastRefreshError: null,
+    sources: {},
+  };
+}
+
+function formatDateTime(ts?: number | null) {
+  if (!ts) {
+    return '';
+  }
+  return new Date(ts).toLocaleString('zh-CN', { hour12: false });
+}
+
+function describeSourceCacheRow(row: SourceCacheRowStatus | undefined, prefetchEnabled: boolean) {
+  if (!row || row.kind === 'empty') {
+    return prefetchEnabled ? '尚未拉取' : '定时缓存已关闭';
+  }
+  if (row.kind === 'inline') {
+    return '内联节点，无需缓存';
+  }
+  if (row.kind === 'disabled') {
+    return '已禁用，不参与缓存';
+  }
+  if (row.kind === 'ok') {
+    return `已缓存 ${row.linkCount ?? 0} 条 · ${formatDateTime(row.fetchedAt)}`;
+  }
+  if (row.kind === 'stale') {
+    return `仍使用 ${formatDateTime(row.fetchedAt)} 的缓存（${row.linkCount ?? 0} 条）· 最近失败：${row.error ?? '未知错误'}`;
+  }
+  return `拉取失败：${row.error ?? '未知错误'}`;
+}
 
 function defaultRulePolicy(options: string[]): string {
   if (options.includes('🎯 总模式')) return '🎯 总模式';
@@ -341,6 +390,10 @@ export default function AdminConfigShell() {
   const [pwdNew, setPwdNew] = useState('');
   const [pwdRepeat, setPwdRepeat] = useState('');
   const [pwdBusy, setPwdBusy] = useState(false);
+  const [prefetchDraft, setPrefetchDraft] = useState<SourcePrefetch>(defaultSourcePrefetch);
+  const [prefetchBusy, setPrefetchBusy] = useState(false);
+  const [sourceCache, setSourceCache] = useState<SourceCacheSnapshot>(() => emptySourceCache(defaultSourcePrefetch));
+  const [cacheBusy, setCacheBusy] = useState(false);
 
   const [poolModalOpen, setPoolModalOpen] = useState(false);
   const [poolModalOriginalKey, setPoolModalOriginalKey] = useState<string | null>(null);
@@ -386,6 +439,9 @@ export default function AdminConfigShell() {
       setProfiles([...cfg.profiles]);
       setExtraRules(Array.isArray(cfg.extraRules) ? cfg.extraRules : []);
       setPolicyOptions(Array.isArray(cfg.policyOptions) ? cfg.policyOptions : []);
+      const prefetch = cfg.sourcePrefetch ?? defaultSourcePrefetch;
+      setPrefetchDraft({ ...prefetch });
+      setSourceCache(cfg.sourceCache ?? emptySourceCache(prefetch));
     } catch {
       showToast('err', '加载配置失败');
     } finally {
@@ -396,6 +452,29 @@ export default function AdminConfigShell() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (!sourceCache.refreshing) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const res = await fetch('/api/admin/config', { method: 'GET' });
+          if (!res.ok) {
+            return;
+          }
+          const data = (await res.json()) as ApiConfig;
+          if (data.sourceCache) {
+            setSourceCache(data.sourceCache);
+          }
+        } catch {
+          // ignore poll errors
+        }
+      })();
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [sourceCache.refreshing]);
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -416,14 +495,19 @@ export default function AdminConfigShell() {
           extraRules: rules,
         }),
       });
+      const data = (await res.json().catch(() => null)) as
+        | { message?: string; sourceCache?: SourceCacheSnapshot }
+        | null;
       if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        showToast('err', typeof err?.message === 'string' ? err.message : '保存失败，请核对校验错误');
+        showToast('err', typeof data?.message === 'string' ? data.message : '保存失败，请核对校验错误');
         return false;
       }
       setPool(poolNext);
       setProfiles(profilesNext);
       setExtraRules(rules);
+      if (data?.sourceCache) {
+        setSourceCache(data.sourceCache);
+      }
       showToast('ok', '已保存到磁盘');
       return true;
     } finally {
@@ -682,6 +766,63 @@ export default function AdminConfigShell() {
     setPendingDeleteProfile(null);
   }
 
+  async function submitPrefetchSettings() {
+    const interval = prefetchDraft.intervalMinutes;
+    if (!Number.isInteger(interval) || interval < MIN_SOURCE_PREFETCH_INTERVAL_MINUTES) {
+      showToast('err', `拉取间隔不能小于 ${MIN_SOURCE_PREFETCH_INTERVAL_MINUTES} 分钟`);
+      return;
+    }
+    setPrefetchBusy(true);
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          sourcePrefetch: {
+            enabled: prefetchDraft.enabled,
+            intervalMinutes: interval,
+          },
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { message?: string; sourcePrefetch?: SourcePrefetch; sourceCache?: SourceCacheSnapshot }
+        | null;
+      if (!res.ok) {
+        showToast('err', typeof data?.message === 'string' ? data.message : '保存设置失败');
+        return;
+      }
+      if (data?.sourcePrefetch) {
+        setPrefetchDraft({ ...data.sourcePrefetch });
+      }
+      if (data?.sourceCache) {
+        setSourceCache(data.sourceCache);
+      }
+      showToast('ok', '设置已保存');
+    } finally {
+      setPrefetchBusy(false);
+    }
+  }
+
+  async function refreshSourceCacheNow() {
+    setCacheBusy(true);
+    try {
+      const res = await fetch('/api/admin/source-cache/refresh', { method: 'POST' });
+      const data = (await res.json().catch(() => null)) as
+        | { message?: string; sourceCache?: SourceCacheSnapshot }
+        | null;
+      if (!res.ok) {
+        showToast('err', typeof data?.message === 'string' ? data.message : '刷新缓存失败');
+        return;
+      }
+      if (data?.sourceCache) {
+        setSourceCache(data.sourceCache);
+      }
+      showToast('ok', '订阅源缓存已刷新');
+    } finally {
+      setCacheBusy(false);
+    }
+  }
+
   async function submitPasswordChange() {
     setPwdBusy(true);
     try {
@@ -776,7 +917,7 @@ export default function AdminConfigShell() {
 
         {adminPwdOk === false ? (
           <Card color="app-yellow" style={{ marginTop: 12 }}>
-            当前未检测到有效的 adminPassword（或仅环境变量 ADMIN_PASSWORD）。请尽快在「密码」分区设置或手动写入配置文件。
+            当前未检测到有效的 adminPassword（或仅环境变量 ADMIN_PASSWORD）。请尽快在「设置」中修改密码，或手动写入配置文件。
           </Card>
         ) : null}
 
@@ -794,7 +935,30 @@ export default function AdminConfigShell() {
                     <Button type="primary" onClick={openPoolAdd}>
                       新建链接池条目
                     </Button>
+                    <Button
+                      type="dashed"
+                      loading={cacheBusy || sourceCache.refreshing}
+                      onClick={() => void refreshSourceCacheNow()}
+                    >
+                      {cacheBusy || sourceCache.refreshing ? '正在刷新缓存…' : '立即刷新缓存'}
+                    </Button>
                   </div>
+                  <Card color="warm-peach-pink" style={{ marginBottom: 16, fontSize: 13, lineHeight: 1.55 }}>
+                    {cacheBusy || sourceCache.refreshing
+                      ? '正在拉取订阅源并写入内存缓存…'
+                      : sourceCache.prefetchEnabled
+                        ? `定时缓存已开启，每 ${sourceCache.intervalMinutes} 分钟拉取一次。${
+                            sourceCache.lastRefreshAt
+                              ? `上次刷新：${formatDateTime(sourceCache.lastRefreshAt)}`
+                              : '尚未完成首次刷新。'
+                          }`
+                        : `定时缓存已关闭。${
+                            sourceCache.lastRefreshAt ? `上次刷新：${formatDateTime(sourceCache.lastRefreshAt)}` : ''
+                          }`}
+                    {sourceCache.lastRefreshError && !sourceCache.refreshing && !cacheBusy ? (
+                      <div style={{ marginTop: 6 }}>部分源失败：{sourceCache.lastRefreshError}</div>
+                    ) : null}
+                  </Card>
                   {sortedPoolKeys(pool).map((key) => (
                     <Card key={key} type="dashed" style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -825,6 +989,10 @@ export default function AdminConfigShell() {
                         <div>
                           <span style={{ fontWeight: 600 }}>UA：</span>
                           <span>{pool[key]?.userAgent ?? ''}</span>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 600 }}>缓存：</span>
+                          <span>{describeSourceCacheRow(sourceCache.sources[key], sourceCache.prefetchEnabled)}</span>
                         </div>
                       </div>
                     </Card>
@@ -920,48 +1088,101 @@ export default function AdminConfigShell() {
               ),
             },
             {
-              key: 'password',
-              label: '管理密码',
+              key: 'settings',
+              label: '设置',
               children: (
-                <Card type="dashed" style={{ padding: '17px 14px 16px', boxSizing: 'border-box' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      <label style={{ display: 'block', fontWeight: 700 }}>当前密码</label>
-                      <Input
-                        allowClear
-                        type="password"
-                        size="large"
-                        value={pwdCurrent}
-                        onChange={(ev) => setPwdCurrent(ev.target.value)}
-                      />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  <Card type="dashed" style={{ padding: '17px 14px 16px', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                      <Card type="title" style={{ margin: 0 }}>
+                        订阅源缓存
+                      </Card>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>定时拉取订阅源并缓存到服务器内存</div>
+                          <div style={{ marginTop: 4, fontSize: 13, opacity: 0.82, lineHeight: 1.5 }}>
+                            开启后按间隔自动抓取链接池中的 HTTP 订阅，供合并时直接使用。关闭后每次拉取都现场请求上游。
+                          </div>
+                        </div>
+                        <Switch
+                          checked={prefetchDraft.enabled}
+                          checkedChildren="开启"
+                          unCheckedChildren="关闭"
+                          onChange={(enabled) => setPrefetchDraft((prev) => ({ ...prev, enabled }))}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        <label style={{ display: 'block', fontWeight: 700 }}>拉取间隔（分钟）</label>
+                        <Input
+                          type="number"
+                          size="large"
+                          min={MIN_SOURCE_PREFETCH_INTERVAL_MINUTES}
+                          step={1}
+                          disabled={!prefetchDraft.enabled}
+                          value={prefetchDraft.intervalMinutes ? String(prefetchDraft.intervalMinutes) : ''}
+                          onChange={(ev) => {
+                            const n = Number(ev.target.value);
+                            setPrefetchDraft((prev) => ({
+                              ...prev,
+                              intervalMinutes: Number.isFinite(n) ? Math.floor(n) : 0,
+                            }));
+                          }}
+                        />
+                        <div style={{ fontSize: 12, opacity: 0.75 }}>
+                          最小 {MIN_SOURCE_PREFETCH_INTERVAL_MINUTES} 分钟，默认 {DEFAULT_SOURCE_PREFETCH_INTERVAL_MINUTES}{' '}
+                          分钟
+                        </div>
+                      </div>
+                      <div style={{ paddingTop: 6 }}>
+                        <Button type="primary" loading={prefetchBusy} onClick={() => void submitPrefetchSettings()}>
+                          保存设置
+                        </Button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      <label style={{ display: 'block', fontWeight: 700 }}>新密码</label>
-                      <Input
-                        allowClear
-                        type="password"
-                        size="large"
-                        value={pwdNew}
-                        onChange={(ev) => setPwdNew(ev.target.value)}
-                      />
+                  </Card>
+                  <Card type="dashed" style={{ padding: '17px 14px 16px', boxSizing: 'border-box' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                      <Card type="title" style={{ margin: 0 }}>
+                        管理密码
+                      </Card>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        <label style={{ display: 'block', fontWeight: 700 }}>当前密码</label>
+                        <Input
+                          allowClear
+                          type="password"
+                          size="large"
+                          value={pwdCurrent}
+                          onChange={(ev) => setPwdCurrent(ev.target.value)}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        <label style={{ display: 'block', fontWeight: 700 }}>新密码</label>
+                        <Input
+                          allowClear
+                          type="password"
+                          size="large"
+                          value={pwdNew}
+                          onChange={(ev) => setPwdNew(ev.target.value)}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        <label style={{ display: 'block', fontWeight: 700 }}>确认新密码</label>
+                        <Input
+                          allowClear
+                          type="password"
+                          size="large"
+                          value={pwdRepeat}
+                          onChange={(ev) => setPwdRepeat(ev.target.value)}
+                        />
+                      </div>
+                      <div style={{ paddingTop: 6 }}>
+                        <Button type="primary" loading={pwdBusy} onClick={() => void submitPasswordChange()}>
+                          更新管理密码
+                        </Button>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      <label style={{ display: 'block', fontWeight: 700 }}>确认新密码</label>
-                      <Input
-                        allowClear
-                        type="password"
-                        size="large"
-                        value={pwdRepeat}
-                        onChange={(ev) => setPwdRepeat(ev.target.value)}
-                      />
-                    </div>
-                    <div style={{ paddingTop: 6 }}>
-                      <Button type="primary" loading={pwdBusy} onClick={() => void submitPasswordChange()}>
-                        更新管理密码
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
+                  </Card>
+                </div>
               ),
             },
           ]}

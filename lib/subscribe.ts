@@ -1,4 +1,5 @@
-import type { ProfileEntry, SubscriptionPoolEntry } from '@/lib/config';
+import { loadConfig, type ProfileEntry, type SubscriptionPoolEntry } from '@/lib/config';
+import { getCachedSourceText, putCachedSourceSuccess } from '@/lib/source-cache';
 
 const MAX_SOURCE_BYTES = Number(process.env.MAX_SOURCE_BYTES || 20_000_000);
 
@@ -96,6 +97,27 @@ export async function fetchHttpSourceBody(url: string, ua: string) {
 
 export type WarnLogger = Pick<Console, 'warn'>;
 
+async function resolveHttpSourceText(sourceName: string, url: string, userAgent: string) {
+  const cfg = await loadConfig();
+  const prefetchEnabled = cfg.sourcePrefetch.enabled;
+  if (prefetchEnabled) {
+    const cached = getCachedSourceText(sourceName, url, userAgent);
+    if (cached != null) {
+      return cached;
+    }
+  }
+  const text = await fetchHttpSourceBody(url, userAgent);
+  if (prefetchEnabled) {
+    putCachedSourceSuccess(sourceName, {
+      url,
+      userAgent,
+      text,
+      linkCount: extractShareLinksFromSubscriptionText(text).length,
+    });
+  }
+  return text;
+}
+
 export async function mergeShareLinksForSource(
   sourceName: string,
   subscriptionPool: Map<string, SubscriptionPoolEntry>,
@@ -108,7 +130,7 @@ export async function mergeShareLinksForSource(
   const { url, userAgent } = source;
   try {
     if (/^https?:\/\//i.test(url)) {
-      const text = await fetchHttpSourceBody(url, userAgent);
+      const text = await resolveHttpSourceText(sourceName, url, userAgent);
       return extractShareLinksFromSubscriptionText(text);
     }
     return extractShareLinksFromSubscriptionText(url);
@@ -133,7 +155,7 @@ export async function mergeShareLinksForProfile(
       let text;
       try {
         if (/^https?:\/\//i.test(url)) {
-          text = await fetchHttpSourceBody(url, userAgent);
+          text = await resolveHttpSourceText(sourceName, url, userAgent);
         } else {
           text = url;
         }

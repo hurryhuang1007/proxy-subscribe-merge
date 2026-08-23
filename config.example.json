@@ -1,5 +1,9 @@
 {
   "adminPassword": "请替换为管理密码",
+  "sourcePrefetch": {
+    "enabled": true,
+    "intervalMinutes": 60
+  },
   "subscriptionPool": {
     "airportA": {
       "url": "https://机场A通用订阅地址",
